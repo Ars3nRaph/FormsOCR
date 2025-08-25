@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+opencv-python
+numpy
+pytesseract
+Pillow
+python-multipart
+pandas
+rapidocr-onnxruntime
+onnxruntime
+paddleocr

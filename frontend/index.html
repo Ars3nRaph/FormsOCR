@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ROI Template OCR Studio — Pro</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar card glass">
+    <h2 class="title">Projets</h2>
+    <div class="proj-actions">
+      <input id="newProjName" placeholder="Nom du projet" class="input" />
+      <button id="btnCreate" class="btn btn-primary">Créer</button>
+    </div>
+    <div class="proj-list"><ul id="projList"></ul></div>
+    <div class="proj-footer">
+      <button id="btnRefresh" class="btn">Rafraîchir</button>
+      <button id="btnDelete" class="btn btn-danger" disabled>Supprimer</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar glass">
+      <div id="crumbs" class="crumbs">—</div>
+      <div class="spacer"></div>
+      <div id="engBadge" class="eng-badge tip" title="">
+        <span class="dot"></span><span>Engines…</span>
+      </div>
+    </header>
+
+    <section class="pane card glass">
+      <div class="pane-head">
+        <h3>Template & ROIs</h3>
+        <div class="pane-tools">
+          <label class="file">
+            <input type="file" id="tmplFile" accept="image/png, image/jpeg"/>
+            <span>Choisir une image</span>
+          </label>
+          <button id="btnUpload" class="btn btn-primary" disabled>Uploader</button>
+          <button id="btnClearWs" class="btn btn-ghost" disabled>Réinitialiser workspace</button>
+        </div>
+      </div>
+
+      <div class="editor">
+        <div class="toolbar">
+          <button id="btnWorkspace" class="btn" disabled>Zone de travail</button>
+          <button id="btnAddRoi" class="btn" disabled>Ajouter ROI</button>
+          <input id="roiName" class="input" placeholder="Nom du ROI"/>
+          <select id="roiType" class="input">
+            <option value="name">Nom</option>
+            <option value="email" selected>Email</option>
+            <option value="phone">Téléphone</option>
+            <option value="age">Âge</option>
+            <option value="digits">Chiffres</option>
+            <option value="number">Nombre</option>
+            <option value="text">Texte</option>
+          </select>
+          <input id="roiPattern" class="input" placeholder="Regex (optionnel)"/>
+          <button id="btnRenameRoi" class="btn btn-ghost" disabled>Mettre à jour</button>
+          <button id="btnDeleteRoi" class="btn btn-danger" disabled>Supprimer</button>
+        </div>
+
+        <div class="canvasWrap"><canvas id="canvas"></canvas></div>
+        <div id="roiList" class="roi-list"></div>
+        <div class="roi-actions-bot">
+          <button id="btnSaveLayout" class="btn btn-success" disabled>Enregistrer le template</button>
+        </div>
+      </div>
+
+      <p class="muted">
+        Astuce : Créez/ouvrez un projet → chargez un template (PNG/JPG) → dessinez la zone de travail → ajoutez des ROIs → (optionnel) regex → Enregistrer.
+      </p>
+    </section>
+
+    <section class="pane card glass">
+      <div class="pane-head">
+        <h3>Traitement par lot</h3>
+        <div class="pane-tools">
+          <label class="file">
+            <input type="file" id="batchFiles" accept="image/png, image/jpeg" multiple/>
+            <span>Sélectionner des images…</span>
+          </label>
+          <button id="btnProcess" class="btn btn-primary" disabled>Lancer l'OCR</button>
+        </div>
+      </div>
+      <div id="processInfo" class="muted"></div>
+      <div id="results" class="card table-card"></div>
+      <div id="outputsHist" class="card glass"></div>
+    </section>
+  </main>
+</div>
+
+<div id="loader" class="loader hidden">
+  <div class="spinner"></div>
+  <div class="loader-text">Traitement en cours…</div>
+</div>
+<div id="toast" class="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>
