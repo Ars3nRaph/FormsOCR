@@ -3,14 +3,12 @@ from typing import List, Dict, Tuple, Optional
 import cv2, numpy as np, pytesseract
 from .utils_image import compute_homography
 
-# Allow user to set Tesseract path via env
 _cmd = os.environ.get("TESSERACT_CMD")
 if _cmd:
     pytesseract.pytesseract.tesseract_cmd = _cmd
 
-ENGINES_STATUS = {"tesseract": True, "rapid": False, "paddle": False, "rapid_error": "", "paddle_error": ""}
+ENGINES_STATUS = {"tesseract": True, "rapid": False, "rapid_error": ""}
 
-# RapidOCR
 rapid_ocr = None
 try:
     from rapidocr_onnxruntime import RapidOCR
@@ -19,20 +17,7 @@ try:
 except Exception as e:
     ENGINES_STATUS["rapid_error"] = str(e)
 
-# PaddleOCR (no use_onnx for compatibility)
-paddle_ocr = None
-try:
-    from paddleocr import PaddleOCR
-    try:
-        paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en')
-    except Exception:
-        paddle_ocr = PaddleOCR()
-    ENGINES_STATUS["paddle"] = True
-except Exception as e:
-    ENGINES_STATUS["paddle_error"] = str(e) + " (tip: run install_optional_ocr.bat)"
-
-# --- Preprocess variants ---
-def _prep_variants(img: np.ndarray) -> List[np.ndarray]:
+def _prep_variants(img):
     if img is None: return []
     g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img.copy()
     out = []
@@ -49,12 +34,12 @@ def _prep_variants(img: np.ndarray) -> List[np.ndarray]:
     out += [v1,v2,v3,v4,v5]
     return out
 
-def _tess(img: np.ndarray, whitelist: Optional[str], psm: int, lang: str="eng+fra") -> str:
+def _tess(img, whitelist=None, psm=7, lang="eng+fra"):
     cfg = f"--oem 1 --psm {psm} -l {lang}"
     if whitelist: cfg += f" -c tessedit_char_whitelist={whitelist}"
     return pytesseract.image_to_string(img, config=cfg).strip()
 
-def ocr_tesseract_line(img: np.ndarray, whitelist: str = None, lang: str = "eng+fra", psm: int = 7) -> str:
+def ocr_tesseract_line(img, whitelist=None, lang="eng+fra", psm=7):
     texts = []
     for v in _prep_variants(img):
         for p in (7, 6, psm):
@@ -67,36 +52,16 @@ def ocr_tesseract_line(img: np.ndarray, whitelist: str = None, lang: str = "eng+
     texts = list(dict.fromkeys([t.strip() for t in texts]))
     return max(texts, key=lambda s: len(s.replace(" ", "")))
 
-def ocr_rapid_line(img: np.ndarray) -> Tuple[str, float]:
+def ocr_rapid_line(img):
     if rapid_ocr is None: return "", 0.0
     try:
         res, _ = rapid_ocr(img)
     except Exception:
         return "", 0.0
     if not res: return "", 0.0
+    import numpy as np
     text = " ".join([t for _, t, _ in res]).strip(); score = float(np.mean([s for _,_,s in res]))
     return text, score
-
-def ocr_paddle_line(img: np.ndarray) -> Tuple[str, float]:
-    if paddle_ocr is None: return "", 0.0
-    try:
-        try:
-            out = paddle_ocr.ocr(img, det=False, rec=True, cls=False)
-        except TypeError:
-            try:
-                out = paddle_ocr.ocr(img, rec=True)
-            except TypeError:
-                out = paddle_ocr.ocr(img)
-    except Exception:
-        return "", 0.0
-    texts, scores = [], []
-    for item in out or []:
-        for rec in item or []:
-            try: t, s = rec[0], float(rec[1])
-            except Exception: continue
-            texts.append(t); scores.append(s)
-    if not texts: return "", 0.0
-    return " ".join(texts).strip(), float(np.mean(scores))
 
 EMAIL_REGEX = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 KNOWN_TLDS = ("com","org","net","edu","gov","ch","fr","de","it","es","uk","be","nl","pt","ca","us","io","ai","co","dev","app","biz","info","me","gg","tv")
@@ -148,13 +113,14 @@ def pick_best(cands, scorer):
     if not cands: return ""
     return max(cands, key=lambda x: scorer(x[0]) + 0.1*x[1])[0]
 
-def ocr_line(img: np.ndarray, roi_type: str = "text", pattern: Optional[str] = None) -> str:
+def ocr_line(img, roi_type: str = "text", pattern: Optional[str] = None) -> str:
     out = ocr_line_debug(img, roi_type, pattern)
     return out.get("best","")
 
-def ocr_line_debug(img: np.ndarray, roi_type: str = "text", pattern: Optional[str] = None) -> Dict[str,str]:
+def ocr_line_debug(img, roi_type: str = "text", pattern: Optional[str] = None):
     if img is None or getattr(img, "size", 0) == 0: return {"best": ""}
-    r_txt, r_sc = ocr_rapid_line(img); p_txt, p_sc = ocr_paddle_line(img)
+    r_txt, r_sc = ocr_rapid_line(img)
+
     if roi_type in ("digits","number","phone","age"):
         t_txt = ocr_tesseract_line(img, whitelist="0123456789", lang="eng", psm=7)
     elif roi_type=="email":
@@ -163,39 +129,39 @@ def ocr_line_debug(img: np.ndarray, roi_type: str = "text", pattern: Optional[st
         t_txt = ocr_tesseract_line(img, lang="eng+fra", psm=7)
 
     if roi_type in ("digits","number"):
-        cands = [ (re.sub(r"[^0-9]","",s), sc) for s,sc in [(r_txt,r_sc),(p_txt,p_sc),(t_txt,0.6)] if s ]
+        cands = [ (re.sub(r"[^0-9]","",s), sc) for s,sc in [(r_txt,r_sc),(t_txt,0.6)] if s ]
         best = pick_best(cands, lambda x: len(x))
-        return {"best": best, "rapid": r_txt, "paddle": p_txt, "tesseract": t_txt}
+        return {"best": best, "rapid": r_txt, "tesseract": t_txt}
 
     if roi_type=="phone":
         cands = []
-        for s,sc in [(r_txt,r_sc),(p_txt,p_sc),(t_txt,0.6)]:
+        for s,sc in [(r_txt,r_sc),(t_txt,0.6)]:
             if not s: continue
             ds = re.sub(r"[^0-9]","",s)
             if len(ds)==9 and ds[0] in "789": ds = "0"+ds
             cands.append((ds, sc))
         best = pick_best(cands, lambda x: (10<=len(x)<=12)*3 + min(len(x),12)*0.1)
-        return {"best": best[:12], "rapid": r_txt, "paddle": p_txt, "tesseract": t_txt}
+        return {"best": best[:12], "rapid": r_txt, "tesseract": t_txt}
 
     if roi_type=="age":
         rx = re.compile(r"(1[01][0-9]|1[0-2]0|[1-9][0-9]?)")
         vals = []
-        for s in [r_txt,p_txt,t_txt]:
+        for s in [r_txt, t_txt]:
             if not s: continue
             m = rx.search(s)
             if m: vals.append(m.group(0))
         if not vals:
-            ds = re.sub(r"[^0-9]","", t_txt or r_txt or p_txt)
+            ds = re.sub(r"[^0-9]","", t_txt or r_txt)
             if ds: vals=[ds[:2]]
         best = max(vals, key=lambda x: len(x)) if vals else ""
-        return {"best": best, "rapid": r_txt, "paddle": p_txt, "tesseract": t_txt}
+        return {"best": best, "rapid": r_txt, "tesseract": t_txt}
 
     if roi_type=="email":
         c=[]
-        for s,sc in [(r_txt,r_sc),(p_txt,p_sc),(t_txt,0.6)]:
+        for s,sc in [(r_txt,r_sc),(t_txt,0.6)]:
             if not s: continue
             c.append((normalize_email(s), sc))
-        if not c: return {"best": "", "rapid": r_txt, "paddle": p_txt, "tesseract": t_txt}
+        if not c: return {"best": "", "rapid": r_txt, "tesseract": t_txt}
         def score_email_local(s):
             score=0.0
             if re.match(r"^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$", s): score+=1.0
@@ -203,17 +169,16 @@ def ocr_line_debug(img: np.ndarray, roi_type: str = "text", pattern: Optional[st
             if ".." in s or " " in s: score-=0.5
             return score
         best = pick_best(c, lambda x: score_email_local(x))
-        return {"best": best, "rapid": r_txt, "paddle": p_txt, "tesseract": t_txt}
+        return {"best": best, "rapid": r_txt, "tesseract": t_txt}
 
-    # generic text/name
-    cand = [(s, sc) for s,sc in [(r_txt,r_sc),(p_txt,p_sc),(t_txt,0.05)] if s]
+    cand = [(s, sc) for s,sc in [(r_txt,r_sc),(t_txt,0.05)] if s]
     ordered = [c for c,_ in sorted(cand, key=lambda x:x[1], reverse=True)]
     final = ordered[0] if ordered else ""
     if roi_type == "name":
         final = normalize_name(final)
-    return {"best": final, "rapid": r_txt, "paddle": p_txt, "tesseract": t_txt}
+    return {"best": final, "rapid": r_txt, "tesseract": t_txt}
 
-def warp_to_template(img_in: np.ndarray, img_template: np.ndarray) -> np.ndarray:
+def warp_to_template(img_in, img_template):
     H = compute_homography(img_in, img_template)
     h, w = img_template.shape[:2]
     if H is None:
@@ -228,7 +193,7 @@ def warp_to_template(img_in: np.ndarray, img_template: np.ndarray) -> np.ndarray
             return cv2.resize(img_in, (w, h))
     return cv2.warpPerspective(img_in, H, (w, h))
 
-def crop_roi(warped: np.ndarray, ws: Dict, roi: Dict) -> np.ndarray:
+def crop_roi(warped, ws, roi):
     x = int(ws['x'] + roi['x'] * ws['w']); y = int(ws['y'] + roi['y'] * ws['h'])
     w = int(max(5, roi['w'] * ws['w'])); h = int(max(5, roi['h'] * ws['h']))
     x2, y2 = x + w, y + h
@@ -241,7 +206,7 @@ def crop_roi(warped: np.ndarray, ws: Dict, roi: Dict) -> np.ndarray:
     patch = cv2.copyMakeBorder(patch, ph, ph, pw, pw, cv2.BORDER_REPLICATE)
     return patch
 
-def process_batch(template_path: str, layout: Dict, input_files: List[str]) -> List[Dict[str, str]]:
+def process_batch(template_path, layout, input_files):
     import numpy as np, cv2, os
     tmpl = cv2.imdecode(np.fromfile(template_path, dtype=np.uint8), cv2.IMREAD_COLOR)
     results = []

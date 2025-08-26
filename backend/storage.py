@@ -2,7 +2,7 @@ import json, os, shutil, glob
 from datetime import datetime
 from typing import Dict, List
 
-BASE = os.path.join(os.path.dirname(__file__), 'data')
+BASE = os.getenv("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
 PROJECTS = os.path.join(BASE, 'projects')
 os.makedirs(PROJECTS, exist_ok=True)
 

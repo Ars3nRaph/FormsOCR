@@ -8,7 +8,7 @@ function roiToPx(roi){ const ws=state.layout.workspace; return { x:px(ws.x+roi.x
 function pxToRoiRect(x,y,w,h){ const ws=state.layout.workspace; return { x:(x-ws.x)/ws.w, y:(y-ws.y)/ws.h, w:w/ws.w, h:h/ws.h }; }
 function pointInRect(p,r){ return p.x>=r.x && p.x<=r.x+r.w && p.y>=r.y && p.y<=r.y+r.h; }
 
-async function refreshEngines(){ const {ok,data}=await jfetch('/api/engines'); if(!ok) return; const badge=$('#engBadge'); const txt=`Tess ✅ · Rapid ${data.rapid?'✅':'❌'} · Paddle ${data.paddle?'✅':'❌'}`; badge.querySelector('span:last-child').textContent = txt; const dot=badge.querySelector('.dot'); dot.style.background = (data.paddle||data.rapid) ? '#22c55e' : '#ef4444'; if(!data.rapid){ badge.title=`RapidOCR désactivé: ${data.rapid_error||'non installé / échec du chargement'}`;} if(!data.paddle){ badge.title+=` | PaddleOCR désactivé: ${data.paddle_error||'exécuter install_optional_ocr.bat'}`;} }
+async function refreshEngines(){ const {ok,data}=await jfetch('/api/engines'); if(!ok) return; const badge=$('#engBadge'); const txt=`Tess ✅ · Rapid ${data.rapid?'✅':'❌'}`; badge.querySelector('span:last-child').textContent = txt; const dot=badge.querySelector('.dot'); dot.style.background = (data.rapid) ? '#22c55e' : '#ef4444'; if(!data.rapid){ badge.title=`RapidOCR désactivé: ${data.rapid_error||'non installé / échec du chargement'}`;} }
 
 async function refreshProjects(){ const {ok,data}=await jfetch('/api/projects'); if(!ok){toast(data.error||'Erreur de liste'); return;} const ul=$('#projList'); ul.innerHTML=''; (data.projects||[]).forEach(p=>{ const li=document.createElement('li'); li.textContent=`${p.name}${p.has_layout?' [layout]':''}${p.has_template?' [template]':''}`; li.dataset.pid=p.id; li.onclick=()=>openProject(p.id, li); ul.appendChild(li); }); refreshEngines(); }
 
@@ -61,6 +61,13 @@ $('#btnSaveLayout').onclick=async()=>{ if(!state.pid||!state.layout.workspace) r
 
 function setLoading(on){ const el=document.getElementById('loader'); if(!el) return; if(on){ el.classList.remove('hidden'); } else { el.classList.add('hidden'); } }
 $('#btnProcess').onclick=async()=>{ const list=document.getElementById('batchFiles').files; if(!list.length){ toast('Sélectionnez des fichiers'); return; } setLoading(true); $('#btnProcess').disabled=true; try{ const fd=new FormData(); [...list].forEach(f=>fd.append('files',f)); const {ok,data}=await jfetch(`/api/projects/${state.pid}/process`,{method:'POST', body:fd}); if(!ok){ toast(data.error||'Échec OCR'); return;} $('#processInfo').textContent=`CSV: ${data.csv}`; renderTable(data.rows, data.csv_url); renderOutputs(); toast('OCR terminé'); } finally { setLoading(false); $('#btnProcess').disabled=false; } };
+
+document.getElementById('batchFiles').addEventListener('change', (e)=>{
+  const n = e.target.files.length;
+  const el = document.getElementById('batchCount');
+  if(!el) return;
+  el.textContent = n ? `${n} document${n>1?'s':''} sélectionné${n>1?'s':''}` : '0 sélection';
+});
 
 function renderTable(rows,url){ const div=$('#results'); div.innerHTML=''; if(!rows||!rows.length){ div.textContent='Aucun résultat'; return;} const table=document.createElement('table'); const thead=document.createElement('thead'); const trh=document.createElement('tr'); Object.keys(rows[0]).forEach(k=>{ const th=document.createElement('th'); th.textContent=k; trh.appendChild(th); }); thead.appendChild(trh); table.appendChild(thead); const tbody=document.createElement('tbody'); rows.forEach(r=>{ const tr=document.createElement('tr'); Object.keys(rows[0]).forEach(k=>{ const td=document.createElement('td'); td.textContent=r[k]??''; tr.appendChild(td); }); tbody.appendChild(tr); }); table.appendChild(tbody); div.appendChild(table); if(url){ const a=document.createElement('a'); a.href=url; a.textContent='⬇ Télécharger le CSV'; a.className='btn btn-primary'; a.style.display='inline-block'; a.style.marginTop='10px'; a.download=''; div.appendChild(a);} }
 
