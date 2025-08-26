@@ -13,8 +13,11 @@ from .utils_pdf import render_pdf_page_to_bgr
 MAX_FILE_MB=10
 MAX_FILE_BYTES=MAX_FILE_MB*1024*1024
 
-app=FastAPI(title='ROI Template OCR Studio v4.1.1 (PDF page switch fix)')
+app=FastAPI(title='ROI Template OCR Studio v4.1.2 (Upload fix)')
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+
+@app.get('/api/health')
+def health(): return {'status':'ok'}
 
 def save_stream_limited(up: UploadFile, dst_path: str, limit: int = MAX_FILE_BYTES):
     total=0
@@ -24,27 +27,27 @@ def save_stream_limited(up: UploadFile, dst_path: str, limit: int = MAX_FILE_BYT
             if not chunk: break
             total+=len(chunk)
             if total>limit:
-                out.close()
+                out.close();
                 try: os.remove(dst_path)
                 except: pass
-                raise HTTPException(413, f'File too large (> {MAX_FILE_MB} MB)')
+                raise HTTPException(413,f'File too large (> {MAX_FILE_MB} MB)')
             out.write(chunk)
     return total
 
 @app.get('/api/projects')
-def api_list_projects():
-    return {'ok':True,'projects': storage.list_projects()}
+def api_list_projects(): return {'ok':True,'projects': storage.list_projects()}
 
 @app.post('/api/projects')
 def api_new_project(name: str = Form(...)):
-    pid=storage.new_project(name)
-    storage.save_json(pid,'project.json',{'name':name})
-    return {'ok':True,'project_id':pid}
+    pid=storage.new_project(name); storage.save_json(pid,'project.json',{'name':name}); return {'ok':True,'project_id':pid}
 
 @app.get('/api/projects/{pid}')
 def api_get_project(pid: str):
     meta=storage.load_json(pid,'project.json')
     return {'ok':True,'project':meta,'project_id':pid,'is_pdf':bool(meta.get('template_pdf')),'pdf_page':meta.get('template_pdf_page'),'pdf_pages':meta.get('template_pdf_pages')}
+
+@app.delete('/api/projects/{pid}')
+def api_delete_project(pid: str): storage.delete_project(pid); return {'ok':True}
 
 @app.post('/api/projects/{pid}/template')
 def api_upload_template(pid: str, file: UploadFile = File(...), page: Optional[int] = Form(default=1)):
@@ -70,13 +73,8 @@ def api_upload_template(pid: str, file: UploadFile = File(...), page: Optional[i
 
 @app.post('/api/projects/{pid}/template-page')
 def api_template_page(pid: str, page: int = Form(...)):
-    meta=storage.load_json(pid,'project.json')
-    pdf=meta.get('template_pdf')
-    if not pdf or not os.path.isfile(pdf):
-        # fallback: template.pdf if exists
-        cand=os.path.join(storage.project_dir(pid),'template.pdf')
-        if os.path.isfile(cand): pdf=cand; meta['template_pdf']=pdf
-        else: raise HTTPException(400,'No PDF template stored for this project. Upload a PDF template first.')
+    meta=storage.load_json(pid,'project.json'); pdf=meta.get('template_pdf')
+    if not pdf or not os.path.isfile(pdf): raise HTTPException(400,'No PDF template stored for this project. Upload a PDF template first.')
     img,pages,used=render_pdf_page_to_bgr(pdf, page=page or 1, dpi=300)
     png=os.path.join(storage.project_dir(pid),'template_raster.png'); cv2.imwrite(png,img)
     h,w=img.shape[:2]
@@ -92,8 +90,7 @@ def api_template_image(pid: str):
     return FileResponse(path, media_type=media)
 
 @app.post('/api/projects/{pid}/layout')
-def api_save_layout(pid: str, layout: Layout):
-    meta=storage.load_json(pid,'project.json'); meta['layout']=layout.dict(); storage.save_json(pid,'project.json',meta); return {'ok':True}
+def api_save_layout(pid: str, layout: Layout): meta=storage.load_json(pid,'project.json'); meta['layout']=layout.dict(); storage.save_json(pid,'project.json',meta); return {'ok':True}
 
 @app.post('/api/projects/{pid}/process')
 def api_process(pid: str, files: List[UploadFile] = File(...), pdf_page: Optional[int] = Form(default=1)):
@@ -103,7 +100,6 @@ def api_process(pid: str, files: List[UploadFile] = File(...), pdf_page: Optiona
     paths=[]
     for uf in files:
         ext=os.path.splitext(uf.filename)[1].lower(); dst=os.path.join(up, uf.filename)
-        # limit
         total=0
         with open(dst,'wb') as out:
             while True:

@@ -1,13 +1,10 @@
 import json, os, shutil, glob
 from datetime import datetime
-BASE=os.path.join(os.path.dirname(__file__),'data'); os.makedirs(os.path.join(BASE,'projects'), exist_ok=True)
-PROJECTS=os.path.join(BASE,'projects')
+BASE=os.path.join(os.path.dirname(__file__),'data'); PROJECTS=os.path.join(BASE,'projects'); os.makedirs(PROJECTS, exist_ok=True)
 
-def slugify(s):
-    return ''.join(c.lower() if c.isalnum() else '-' for c in s).strip('-')
+def slugify(s): return ''.join(c.lower() if c.isalnum() else '-' for c in s).strip('-')
 
 def new_project(name):
-    from datetime import datetime
     pid=f"{slugify(name)}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"; os.makedirs(os.path.join(PROJECTS,pid), exist_ok=True)
     return pid
 
@@ -29,3 +26,7 @@ def list_projects():
             except: meta={}
         out.append({'id':pid,'name':meta.get('name',pid),'has_template':bool(meta.get('template_path')),'has_layout':bool(meta.get('layout')),'pdf':bool(meta.get('template_pdf')),'pdf_page':meta.get('template_pdf_page'),'pdf_pages':meta.get('template_pdf_pages')})
     return out
+
+def delete_project(pid):
+    pdir=project_dir(pid)
+    if os.path.isdir(pdir): shutil.rmtree(pdir)
