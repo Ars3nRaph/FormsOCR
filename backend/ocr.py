@@ -1,5 +1,5 @@
 import os, re
-from typing import List, Dict, Tuple, Optional
+from typing import Optional
 import cv2, numpy as np, pytesseract
 from .utils_image import compute_homography
 

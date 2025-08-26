@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set "VIRTUAL_ENV=C:\Users\arsen\Documents\OCR_APPs\roi-ocr-studio-v4.0.6-pro-full\.venv"
+set "VIRTUAL_ENV=C:\Users\arsen\Documents\OCR_APPs\roi-ocr-studio-v4.0.8-full-Docker\.venv"
 
 if not defined PROMPT set PROMPT=$P$G
 
