@@ -1,120 +1,46 @@
-let state = { pid:null, layout:{workspace:null, rois:[]}, mode:null, selected:-1, img:null, pdf:false, pdfPages:null };
-let zoom = { s:1, tx:0, ty:0 }; let isPanning=false, spaceDown=false, panStart=null;
-
-const $ = s => document.querySelector(s);
-const toast = msg => { const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2400); };
-async function jfetch(url,opts={}){ const r=await fetch(url,opts); const txt=await r.text(); let j; try{j=JSON.parse(txt);}catch{j={ok:false,error:txt}}; return {ok:r.ok && (j.ok!==false), data:j, status:r.status}; }
-
-function updateZoomInfo(){ $('#zoomInfo').textContent = `${Math.round(zoom.s*100)}%`; }
-function setTransform(ctx){ ctx.setTransform(zoom.s, 0, 0, zoom.s, zoom.tx, zoom.ty); }
-function screenToCanvas(e){ const rect=canvas.getBoundingClientRect(); const sx=(e.clientX-rect.left)*(canvas.width/rect.width); const sy=(e.clientY-rect.top)*(canvas.height/rect.height); return {x:(sx-zoom.tx)/zoom.s, y:(sy-zoom.ty)/zoom.s}; }
-
-function fitToView(){ if(!state.img) return; const cw=canvasContainer.clientWidth, ch=canvasContainer.clientHeight; const sw=canvas.width, sh=canvas.height; const s = Math.min(cw/sw, ch/sh); zoom.s = Math.max(0.1, Math.min(4, s));
-  const rect=canvas.getBoundingClientRect(); const scaleX=canvas.width/rect.width, scaleY=canvas.height/rect.height;
-  zoom.tx = (rect.width - sw*zoom.s)/2 * scaleX; zoom.ty = (rect.height - sh*zoom.s)/2 * scaleY; updateZoomInfo(); draw(); }
-function zoomAt(factor, cx, cy){ const prevS = zoom.s; const newS = Math.max(0.1, Math.min(4, zoom.s*factor)); const rect=canvas.getBoundingClientRect(); const sx=(cx-rect.left)*(canvas.width/rect.width); const sy=(cy-rect.top)*(canvas.height/rect.height);
-  zoom.tx = sx - (sx - zoom.tx) * (newS/prevS); zoom.ty = sy - (sy - zoom.ty) * (newS/prevS); zoom.s = newS; updateZoomInfo(); draw(); }
-function setOne(){ zoom.s=1; zoom.tx=0; zoom.ty=0; updateZoomInfo(); draw(); }
-
-const canvas=$('#canvas'), ctx=canvas.getContext('2d'); const canvasContainer=document.querySelector('.canvasWrap');
-let start=null, temp=null, act=null, handle=null;
-
-function enableEditor(en){ $('#btnWorkspace').disabled=!en; $('#btnAddRoi').disabled=!en; $('#btnClearWs').disabled=!en; $('#btnSaveLayout').disabled=!en; $('#btnProcess').disabled=!en; if(!state.pdf){ $('#btnApplyPdfPage').disabled=true; } else { $('#btnApplyPdfPage').disabled=false; } }
-
-function draw(){ const c=canvas, ctx=c.getContext('2d'); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,c.width,c.height);
-  if(state.img){ setTransform(ctx); ctx.drawImage(state.img,0,0);
-    if(state.layout.workspace){ const ws=state.layout.workspace; ctx.strokeStyle='#34d399'; ctx.lineWidth=2/zoom.s; ctx.strokeRect(ws.x,ws.y,ws.w,ws.h);
-      state.layout.rois.forEach((roi,i)=>{ const r=roiToPx(roi); ctx.strokeStyle=i===state.selected?'#fbbf24':'#60a5fa'; ctx.lineWidth=2/zoom.s; ctx.strokeRect(r.x,r.y,r.w,r.h); ctx.fillStyle='rgba(96,165,250,0.16)'; ctx.fillRect(r.x,r.y,r.w,r.h); ctx.fillStyle='#e5e7eb'; ctx.font=`${12/zoom.s}px system-ui`; ctx.fillText(`${roi.name} [${roi.type}]`, r.x+6/zoom.s, r.y+16/zoom.s); const hs=6/zoom.s; [[r.x,r.y],[r.x+r.w,r.y],[r.x,r.y+r.h],[r.x+r.w,r.y+r.h]].forEach(([x,y])=>{ ctx.fillStyle='#0ea5e9'; ctx.fillRect(x-hs,y-hs,hs*2,hs*2); }); }); } }
-  if(act && temp){ setTransform(ctx); drawTemp(); }
-}
-
-function roiToPx(roi){ const ws=state.layout.workspace; return { x:(ws.x+roi.x*ws.w), y:(ws.y+roi.y*ws.h), w:(roi.w*ws.w), h:(roi.h*ws.h) }; }
-function pxToRoiRect(x,y,w,h){ const ws=state.layout.workspace; return { x:(x-ws.x)/ws.w, y:(y-ws.y)/ws.h, w:w/ws.w, h:h/ws.h }; }
-function norm(r){ let x=r.x,y=r.y,w=r.w,h=r.h; if(w<0){x+=w; w*=-1;} if(h<0){y+=h; h*=-1;} return {x,y,w,h}; }
-function drawTemp(){ const r=norm(temp); const ctx=canvas.getContext('2d'); ctx.save(); ctx.setLineDash([6/zoom.s,4/zoom.s]); ctx.strokeStyle=act==='draw_ws'?'#34d399':'#60a5fa'; ctx.lineWidth=1.5/zoom.s; ctx.strokeRect(r.x,r.y,r.w,r.h); ctx.restore(); }
-
-canvas.addEventListener('wheel',(e)=>{ e.preventDefault(); const factor = e.deltaY<0 ? 1.1 : 0.9; zoomAt(factor, e.clientX, e.clientY); }, {passive:false});
-window.addEventListener('keydown',(e)=>{ if(e.code==='Space'){ spaceDown=true; canvas.style.cursor='grab'; } });
-window.addEventListener('keyup',(e)=>{ if(e.code==='Space'){ spaceDown=false; canvas.style.cursor='default'; isPanning=false; } });
-
-canvas.addEventListener('mousedown',(e)=>{
-  const p=screenToCanvas(e);
-  if(spaceDown){ isPanning=true; panStart={x:e.clientX, y:e.clientY, tx:zoom.tx, ty:zoom.ty}; return; }
-  if(!state.layout.workspace){ state.mode='workspace'; }
-  if(state.mode==='workspace'){ act='draw_ws'; start=p; temp={x:p.x,y:p.y,w:0,h:0}; return;}
-  if(state.mode==='roi'&&state.layout.workspace){ act='draw_roi'; start=p; temp={x:p.x,y:p.y,w:0,h:0}; return; }
-});
-canvas.addEventListener('mousemove',(e)=>{
-  if(isPanning && spaceDown){ const rect=canvas.getBoundingClientRect(); const scaleX=canvas.width/rect.width, scaleY=canvas.height/rect.height; const dx=e.clientX-panStart.x, dy=e.clientY-panStart.y; zoom.tx=panStart.tx+dx*scaleX; zoom.ty=panStart.ty+dy*scaleY; draw(); return; }
-  if(!act) return; const p=screenToCanvas(e);
-  if(act==='draw_ws'||act==='draw_roi'){ temp.w=p.x-start.x; temp.h=p.y-start.y; draw(); return; }
-});
-canvas.addEventListener('mouseup',()=>{
-  if(isPanning){ isPanning=false; return; }
-  if(act==='draw_ws'){ const r=norm(temp); state.layout.workspace=r; state.layout.rois=[]; state.selected=-1; renderRoiList(); draw(); toast('Zone de travail définie'); enableEditor(true); }
-  if(act==='draw_roi'){ const r=norm(temp); if(!state.layout.workspace){ act=null; return; } const roi=pxToRoiRect(r.x,r.y,r.w,r.h); const name=$('#roiName').value.trim()||`ROI_${state.layout.rois.length+1}`; const type=$('#roiType').value||'text'; const pattern=$('#roiPattern').value.trim()||null; state.layout.rois.push({name,type,pattern,...roi}); state.selected=state.layout.rois.length-1; renderRoiList(); draw(); toast('ROI ajouté'); }
-  act=null; handle=null;
-});
-
-function renderRoiList(){ const box=$('#roiList'); box.innerHTML=''; if(!state.layout.rois.length) return; state.layout.rois.forEach((r,i)=>{ const b=document.createElement('button'); b.className='roi-pill'+(i===state.selected?' active':''); b.textContent=`${r.name} [${r.type}]`; b.onclick=()=>{ state.selected=i; draw(); renderRoiList(); $('#roiName').value=r.name; $('#roiType').value=r.type; $('#roiPattern').value=r.pattern||''; $('#btnRenameRoi').disabled=false; $('#btnDeleteRoi').disabled=false; }; box.appendChild(b); }); }
-$('#btnRenameRoi').onclick=()=>{ const i=state.selected; if(i<0) return; state.layout.rois[i].name=$('#roiName').value.trim()||state.layout.rois[i].name; state.layout.rois[i].type=$('#roiType').value||'text'; state.layout.rois[i].pattern=$('#roiPattern').value.trim()||null; renderRoiList(); draw(); };
-$('#btnDeleteRoi').onclick=()=>{ const i=state.selected; if(i<0) return; state.layout.rois.splice(i,1); state.selected=-1; renderRoiList(); draw(); };
-
-function refreshEngines(){ jfetch('/api/engines').then(({ok,data})=>{ if(!ok) return; const badge=$('#engBadge'); const txt=`Tess ✅ · Rapid ${data.rapid?'✅':'❌'}`; badge.querySelector('span:last-child').textContent = txt; const dot=badge.querySelector('.dot'); dot.style.background = (data.rapid) ? '#22c55e' : '#ef4444'; if(!data.rapid){ badge.title=`RapidOCR désactivé: ${data.rapid_error||'non installé / échec du chargement'}`;} }); }
-
-async function refreshProjects(){ const {ok,data}=await jfetch('/api/projects'); if(!ok){toast(data.error||'Erreur de liste'); return;} const ul=$('#projList'); ul.innerHTML=''; (data.projects||[]).forEach(p=>{ const li=document.createElement('li'); li.textContent=`${p.name}${p.has_layout?' [layout]':''}${p.has_template?' [template]':''}${p.pdf?` [pdf p${p.pdf_page||1}/${p.pdf_pages||'?'}]`:''}`; li.dataset.pid=p.id; li.onclick=()=>openProject(p.id, li); ul.appendChild(li); }); refreshEngines(); }
-
-async function openProject(pid, liEl){ [...$('#projList').children].forEach(x=>x.classList.remove('active')); if(liEl) liEl.classList.add('active'); const {ok,data}=await jfetch(`/api/projects/${pid}`); if(!ok) return toast(data.error||'Ouverture impossible'); state.pid=pid; $('#crumbs').textContent=`${data.project.name} (${pid})`; $('#btnUpload').disabled=false; $('#btnDelete').disabled=false;
-  state.pdf = !!data.is_pdf; state.pdfPages=data.pdf_pages||null;
-  const info = state.pdf ? `PDF (page ${data.pdf_page||1}/${data.pdf_pages||'?'})` : 'Image';
-  $('#tmplPdfInfo').textContent = info;
-  if(state.pdf){ $('#tmplPdfPage').min = 1; if(state.pdfPages){ $('#tmplPdfPage').max = state.pdfPages; } $('#btnApplyPdfPage').disabled=false; }
-  if(data.project.template_path){ loadTemplateFromServer(); enableEditor(true);} else { state.img=null; draw(); enableEditor(false); }
-  if(data.project.layout){ state.layout=data.project.layout; enableEditor(true);} else { state.layout={workspace:null, rois:[]}; }
-  if(data.pdf_page){ $('#tmplPdfPage').value = data.pdf_page; }
-  renderRoiList(); renderOutputs();
-}
-
-$('#btnCreate').onclick=async()=>{ const name=$('#newProjName').value.trim(); if(!name) return toast('Nom requis'); const fd=new FormData(); fd.append('name',name); const r=await fetch('/api/projects',{method:'POST', body:fd}); const j=await r.json(); if(!r.ok || j.ok===false) return toast(j.error||'Échec de création'); await refreshProjects(); openProject(j.project_id); };
+let state={token:null,me:null,pid:null,layout:{workspace:null,rois:[]},selected:-1,img:null,page:1,pages:1,scale:1.0};
+const $=s=>document.querySelector(s); const toast=msg=>{const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);};
+function headers(){const h={'Accept':'application/json'}; if(state.token) h['Authorization']='Bearer '+state.token; return h;}
+async function jfetch(url,opts={}){opts.headers=Object.assign({},headers(),opts.headers||{}); const r=await fetch(url,opts); const txt=await r.text(); let j; try{j=JSON.parse(txt);}catch{j={ok:false,error:txt}}; const ok=r.ok&&(j.ok!==false); if(r.status===401){toast('Session expirée — reconnectez-vous'); enableAuthed(false);} return {ok,data:j,status:r.status};}
+function enableAuthed(en){['#btnCreate','#btnRefresh','#btnDelete','#btnWorkspace','#btnAddRoi','#btnClearWs','#btnSaveLayout','#btnProcess','#btnUpload','#btnPrevPg','#btnNextPg'].forEach(id=>{$(id).disabled=!en});}
+async function refreshMe(){const {ok,data}=await jfetch('/api/me'); if(!ok) return; state.me=data; const badge=$('#meInfo'); badge.querySelector('span:last-child').textContent=`${data.email} · ${data.plan} · ${data.docs_processed}/${data.limits.monthly_docs}`; badge.querySelector('.dot').style.background='#22c55e';}
+async function refreshEng(){const {ok,data}=await jfetch('/api/engines'); if(!ok) return; const b=$('#engBadge'); b.querySelector('span:last-child').textContent=`Tess ✅ · Rapid ${data.rapid?'✅':'❌'} · Paddle ${data.paddle?'✅':'❌'}`;}
+$('#btnRegister').onclick=async()=>{const email=$('#email').value.trim(),password=$('#password').value; if(!email||!password) return toast('Email et mot de passe requis'); const r=await jfetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})}); if(!r.ok) return toast(r.data.error||'Echec création'); state.token=r.data.access_token; localStorage.setItem('token',state.token); await afterLogin();};
+$('#btnLogin').onclick=async()=>{const email=$('#email').value.trim(),password=$('#password').value; const r=await jfetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})}); if(!r.ok) return toast(r.data.error||'Echec connexion'); state.token=r.data.access_token; localStorage.setItem('token',state.token); await afterLogin();};
+async function afterLogin(){enableAuthed(true); await Promise.all([refreshMe(), refreshProjects(), refreshEng()]);}
+async function refreshProjects(){const r=await jfetch('/api/projects'); if(!r.ok) return toast(r.data.error||'Erreur de liste'); const ul=$('#projList'); ul.innerHTML=''; (r.data.projects||[]).forEach(p=>{const li=document.createElement('li'); li.textContent=`${p.name}${p.has_layout?' [layout]':''}${p.has_template?' [template]':''}${p.template_is_pdf?` [PDF ${p.pages}p]`:''}`; li.dataset.pid=p.id; li.onclick=()=>openProject(p.id,li,p); ul.appendChild(li);});}
+async function openProject(pid,li,preview){[...$('#projList').children].forEach(x=>x.classList.remove('active')); if(li) li.classList.add('active'); const r=await jfetch(`/api/projects/${pid}`); if(!r.ok) return toast(r.data.error||'Ouverture impossible'); state.pid=pid; $('#crumbs').textContent=`${r.data.project.name} (${pid})`; const meta=r.data.project; state.pages=meta.template_pages||1; state.page=1; if(meta.template_path){ await loadTemplateFromServer(); enableAuthed(true);} else { state.img=null; draw(); } try{ const lay=await jfetch(`/api/projects/${pid}/layout?page=${state.page}`); state.layout=lay.ok?lay.data.layout:{workspace:null,rois:[]}; }catch{} finally{ renderRoiList(); renderOutputs(); updatePageLabel(); }}
+$('#btnCreate').onclick=async()=>{const name=$('#newProjName').value.trim(); if(!name) return toast('Nom requis'); const r=await jfetch('/api/projects',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({name})}); if(!r.ok) return toast(r.data.error||'Échec création'); await refreshProjects(); openProject(r.data.project_id);};
 $('#btnRefresh').onclick=()=>refreshProjects();
-$('#btnDelete').onclick=async()=>{ if(!state.pid) return; if(!confirm('Supprimer ce projet et ses fichiers ?')) return; const {ok,data}=await jfetch(`/api/projects/${state.pid}`,{method:'DELETE'}); toast(ok?'Supprimé':(data.error||'Échec de suppression')); state.pid=null; enableEditor(false); refreshProjects(); };
-
-function loadTemplateFromServer(){ const img=new Image(); img.onload=()=>{ state.img=img; canvas.width=img.width; canvas.height=img.height; setOne(); fitToView(); draw(); enableEditor(true); }; img.onerror=()=>toast('Échec de chargement du template'); img.src=`/api/projects/${state.pid}/template-image?ts=${Date.now()}`; }
-
-async function ensureProject(){ if(state.pid) return; const name='auto-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-'); const fd=new FormData(); fd.append('name', name); const r=await fetch('/api/projects',{method:'POST', body:fd}); const j=await r.json(); if(r.ok&&j.project_id){ state.pid=j.project_id; refreshProjects(); $('#crumbs').textContent=`${name} (${state.pid})`; } }
-
-async function uploadTemplateFile(f){
-  if(!f) return toast('Choisissez un fichier'); await ensureProject(); const fd=new FormData(); fd.append('file',f); const page = parseInt($('#tmplPdfPage').value||'1',10); fd.append('page', String(page));
-  const {ok,data}=await jfetch(`/api/projects/${state.pid}/template`,{method:'POST', body:fd});
-  if(!ok){ toast(data.error||'Échec d’upload'); return; }
-  state.pdf = !!data.from_pdf; state.pdfPages = data.pages || null;
-  $('#tmplPdfInfo').textContent = state.pdf ? `PDF (page ${data.page||1}/${data.pages||'?'})` : 'Image';
-  if(state.pdf){ $('#btnApplyPdfPage').disabled=false; $('#tmplPdfPage').min=1; if(state.pdfPages){ $('#tmplPdfPage').max=state.pdfPages; } }
-  if(data.page){ $('#tmplPdfPage').value = data.page; }
-  loadTemplateFromServer(); enableEditor(true); toast('Template chargé');
-}
-
-$('#tmplFile').addEventListener('change', (e)=>{ const f=e.target.files[0]; $('#btnUpload').disabled=!f; if(f) uploadTemplateFile(f); });
-$('#btnUpload').onclick=()=>{ const f=$('#tmplFile').files[0]; uploadTemplateFile(f); };
-$('#btnApplyPdfPage').onclick=async()=>{ if(!state.pid) return; if(!state.pdf) { toast('Le template actuel n’est pas un PDF. Réuploade un PDF.'); return; } let page=parseInt($('#tmplPdfPage').value||'1',10); if(state.pdfPages) page=Math.max(1, Math.min(state.pdfPages, page)); const fd=new FormData(); fd.append('page', String(page)); const {ok,data}=await jfetch(`/api/projects/${state.pid}/template-page`,{method:'POST', body:fd}); if(!ok){ toast(data.error||'Impossible de changer la page'); return;} $('#tmplPdfPage').value = data.page; $('#tmplPdfInfo').textContent = `PDF (page ${data.page}/${data.pages})`; loadTemplateFromServer(); toast(`Page PDF appliquée: ${data.page}/${data.pages}`); };
-
+$('#btnDelete').onclick=async()=>{if(!state.pid) return; if(!confirm('Supprimer ce projet ?')) return; const r=await jfetch(`/api/projects/${state.pid}`,{method:'DELETE'}); toast(r.ok?'Supprimé':(r.data.error||'Échec suppression')); state.pid=null; refreshProjects();};
+function updatePageLabel(){ $('#pageLbl').textContent = `p.${state.page}/${state.pages}`; }
+async function loadTemplateFromServer(){const img=new Image(); img.onload=()=>{state.img=img; canvas.width=img.naturalWidth; canvas.height=img.naturalHeight; draw();}; img.onerror=()=>toast('Échec chargement template'); img.src=`/api/projects/${state.pid}/template-image?pg=${state.page}&ts=${Date.now()}`; updatePageLabel();}
+async function uploadTemplateFile(f){if(!f) return toast('Choisissez un fichier'); if(!state.pid) return toast('Ouvrez un projet'); const fd=new FormData(); fd.append('file',f); const r=await jfetch(`/api/projects/${state.pid}/template`,{method:'POST',body:fd}); if(!r.ok) return toast(r.data.error||'Échec upload'); state.pages=r.data.pages||1; state.page=1; await loadTemplateFromServer(); toast('Template chargé');}
+$('#tmplFile').addEventListener('change', e=>{const f=e.target.files[0]; if(!f) return toast('Aucun fichier'); $('#btnUpload').disabled=false; uploadTemplateFile(f);});
+$('#btnUpload').onclick=()=>{const f=$('#tmplFile').files[0]; uploadTemplateFile(f);};
+$('#btnPrevPg').onclick=async()=>{if(state.page>1){state.page--; await loadTemplateFromServer(); await loadLayoutForCurrentPage();}};
+$('#btnNextPg').onclick=async()=>{if(state.page<state.pages){state.page++; await loadTemplateFromServer(); await loadLayoutForCurrentPage();}};
+async function loadLayoutForCurrentPage(){const r=await jfetch(`/api/projects/${state.pid}/layout?page=${state.page}`); state.layout=r.ok?r.data.layout:{workspace:null,rois:[]}; renderRoiList(); draw();}
+const canvas=$('#canvas'), ctx=canvas.getContext('2d'); let start=null, temp=null, act=null, handle=null; $('#zoomRange').addEventListener('input', e=>{ state.scale=(+e.target.value)/100; draw(); });
+function getMouse(e){const r=canvas.getBoundingClientRect(); const x=(e.clientX-r.left)/state.scale, y=(e.clientY-r.top)/state.scale; return {x:Math.round(x), y:Math.round(y)};}
+function px(x){return Math.round(x);} function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function roiToPx(roi){const ws=state.layout.workspace; return {x:px(ws.x+roi.x*ws.w), y:px(ws.y+roi.y*ws.h), w:px(roi.w*ws.w), h:px(roi.h*ws.h)};}
+function pxToRoiRect(x,y,w,h){const ws=state.layout.workspace; return {x:(x-ws.x)/ws.w,y:(y-ws.y)/ws.h,w:w/ws.w,h:h/ws.h};}
+function pointInRect(p,r){return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h;}
+function norm(r){let x=r.x,y=r.y,w=r.w,h=r.h;if(w<0){x+=w;w*=-1;} if(h<0){y+=h;h*=-1;} return {x,y,w,h};}
+function hitHandle(p,r){const hs=6; const c=[[r.x,r.y,'tl'],[r.x+r.w,r.y,'tr'],[r.x,r.y+r.h,'bl'],[r.x+r.w,r.y+r.h,'br']]; for(const [x,y,k] of c){ if(pointInRect(p,{x:x-hs,y:y-hs,w:2*hs,h:2*hs})) return k;} return null;}
+function draw(){ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.scale(state.scale, state.scale); if(state.img) ctx.drawImage(state.img,0,0); if(state.layout.workspace){const ws=state.layout.workspace; ctx.strokeStyle='#34d399'; ctx.lineWidth=2; ctx.strokeRect(ws.x,ws.y,ws.w,ws.h); state.layout.rois.forEach((roi,i)=>{const r=roiToPx(roi); ctx.strokeStyle=i===state.selected?'#fbbf24':'#60a5fa'; ctx.strokeRect(r.x,r.y,r.w,r.h); ctx.fillStyle='rgba(96,165,250,0.16)'; ctx.fillRect(r.x,r.y,r.w,r.h); ctx.fillStyle='#e5e7eb'; ctx.font='12px system-ui'; ctx.fillText(`${roi.name} [${roi.type}]`, r.x+6, r.y+16); const hs=6; [[r.x,r.y],[r.x+r.w,r.y],[r.x,r.y+r.h],[r.x+r.w,r.y+r.h]].forEach(([x,y])=>{ctx.fillStyle='#0ea5e9'; ctx.fillRect(x-hs,y-hs,hs*2,hs*2);});});} if(temp){const r=norm(temp); ctx.save(); ctx.setLineDash([6,4]); ctx.strokeStyle=act==='draw_ws'?'#34d399':'#60a5fa'; ctx.strokeRect(r.x,r.y,r.w,r.h); ctx.restore();}}
 $('#btnWorkspace').onclick=()=>state.mode='workspace'; $('#btnAddRoi').onclick=()=>state.mode='roi';
-$('#btnFit').onclick=fitToView; $('#btnOne').onclick=setOne; $('#btnZoomIn').onclick=(e)=>zoomAt(1.2, e.clientX, e.clientY); $('#btnZoomOut').onclick=(e)=>zoomAt(1/1.2, e.clientX, e.clientY);
-
-$('#btnSaveLayout').onclick=async()=>{ if(!state.pid||!state.layout.workspace) return toast('Définissez la zone de travail'); const {ok,data}=await jfetch(`/api/projects/${state.pid}/layout`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({workspace:state.layout.workspace, rois:state.layout.rois})}); toast(ok?'Template enregistré':(data.error||'Échec enregistrement')); };
-
-document.getElementById('batchFiles').addEventListener('change', (e)=>{
-  const n = e.target.files.length;
-  document.getElementById('batchCount').textContent = n ? `${n} document${n>1?'s':''} sélectionné${n>1?'s':''}` : '0 sélection';
-});
-
-function setLoading(on){ const el=document.getElementById('loader'); if(on){ el.classList.remove('hidden'); } else { el.classList.add('hidden'); } }
-$('#btnProcess').onclick=async()=>{ const list=document.getElementById('batchFiles').files; if(!list.length){ toast('Sélectionnez des fichiers'); return; } setLoading(true); $('#btnProcess').disabled=true; try{ const fd=new FormData(); [...list].forEach(f=>fd.append('files',f)); const pdfPage = parseInt($('#batchPdfPage').value||'1',10); fd.append('pdf_page', String(pdfPage)); const {ok,data}=await jfetch(`/api/projects/${state.pid}/process`,{method:'POST', body:fd}); if(!ok){ toast(data.error||'Échec OCR'); return;} $('#processInfo').textContent=`CSV: ${data.csv}`; renderTable(data.rows, data.csv_url); renderOutputs(); toast('OCR terminé'); } finally { setLoading(false); $('#btnProcess').disabled=false; } };
-
-function renderTable(rows,url){ const div=$('#results'); div.innerHTML=''; if(!rows||!rows.length){ div.textContent='Aucun résultat'; return;} const table=document.createElement('table'); const thead=document.createElement('thead'); const trh=document.createElement('tr'); Object.keys(rows[0]).forEach(k=>{ const th=document.createElement('th'); th.textContent=k; trh.appendChild(th); }); thead.appendChild(trh); table.appendChild(thead); const tbody=document.createElement('tbody'); rows.forEach(r=>{ const tr=document.createElement('tr'); Object.keys(rows[0]).forEach(k=>{ const td=document.createElement('td'); td.textContent=r[k]??''; tr.appendChild(td); }); tbody.appendChild(tr); }); table.appendChild(tbody); div.appendChild(table); if(url){ const a=document.createElement('a'); a.href=url; a.textContent='⬇ Télécharger le CSV'; a.className='btn btn-primary'; a.style.display='inline-block'; a.style.marginTop='10px'; a.download=''; div.appendChild(a);} }
-
-async function renderOutputs(){ if(!state.pid) return; const {ok,data}=await jfetch(`/api/projects/${state.pid}/outputs`); const div=$('#outputsHist'); div.innerHTML='<h4 style="margin:10px">Historique des exports</h4>'; if(!ok){ div.append(' (erreur)'); return;} if(!data.files||!data.files.length){ div.append(' — aucun'); return;} const ul=document.createElement('ul'); ul.style.listStyle='none'; ul.style.padding='10px'; data.files.forEach(f=>{ const li=document.createElement('li'); li.style.margin='6px 0'; const a=document.createElement('a'); a.href=`/api/projects/${state.pid}/download/${f}`; a.textContent=f; a.className='btn btn-ghost'; a.download=''; li.appendChild(a); ul.appendChild(ul.lastChild||li); ul.appendChild(li); }); div.appendChild(ul); }
-
-function loadTemplateFromServer(){ const img=new Image(); img.onload=()=>{ state.img=img; canvas.width=img.width; canvas.height=img.height; setOne(); fitToView(); draw(); }; img.onerror=()=>toast('Échec de chargement du template'); img.src=`/api/projects/${state.pid}/template-image?ts=${Date.now()}`; }
-
-refreshProjects(); refreshEngines(); updateZoomInfo();
+canvas.addEventListener('mousedown',(e)=>{if(!state.layout.workspace){state.mode='workspace';} const p=getMouse(e); const ws=state.layout.workspace; if(state.mode==='workspace'){act='draw_ws'; start=p; temp={x:p.x,y:p.y,w:0,h:0}; return;} if(state.mode==='roi'&&ws){let hit=-1,rpx=null; state.layout.rois.forEach((roi,i)=>{const r=roiToPx(roi); if(pointInRect(p,r)){hit=i; rpx=r;}}); if(hit>=0){state.selected=hit; renderRoiList(); draw(); const h=hitHandle(p,rpx); if(h){act='resize'; handle=h; this.start=p; this.orig=rpx;} else {act='drag'; this.offset={dx:p.x-rpx.x, dy:p.y-rpx.y, w:rpx.w, h:rpx.h};} return;} act='draw_roi'; start=p; temp={x:p.x,y:p.y,w:0,h:0}; return; }});
+canvas.addEventListener('mousemove',(e)=>{if(!act) return; const p=getMouse(e); if(act==='draw_ws'||act==='draw_roi'){temp.w=p.x-start.x; temp.h=p.y-start.y; draw(); return;} if(act==='drag'){const ws=state.layout.workspace; let x=clamp(p.x-this.offset.dx, ws.x, ws.x+ws.w-this.offset.w), y=clamp(p.y-this.offset.dy, ws.y, ws.y+ws.h-this.offset.h); Object.assign(state.layout.rois[state.selected], pxToRoiRect(x,y,this.offset.w,this.offset.h)); draw(); return;} if(act==='resize'){const ws=state.layout.workspace; let o=this.orig,x=o.x,y=o.y,w=o.w,h=o.h; if(handle==='tl'){w+=(x-p.x);h+=(y-p.y);x=p.x;y=p.y;} if(handle==='tr'){w=p.x-x;h+=(y-p.y);y=p.y;} if(handle==='bl'){w+=(x-p.x);x=p.x;h=p.y-y;} if(handle==='br'){w=p.x-x;h=p.y-y;} x=clamp(x,ws.x,ws.x+ws.w); y=clamp(y,ws.y,ws.y+ws.h); w=clamp(w,5,ws.x+ws.w-x); h=clamp(h,5,ws.y+ws.h-y); Object.assign(state.layout.rois[state.selected], pxToRoiRect(x,y,w,h)); draw(); return;}});
+canvas.addEventListener('mouseup',()=>{if(act==='draw_ws'){const r=norm(temp); state.layout.workspace=r; state.layout.rois=[]; state.selected=-1; draw(); renderRoiList(); toast('Zone de travail définie');} if(act==='draw_roi'){const r=norm(temp); if(!state.layout.workspace){act=null; return;} const roi=pxToRoiRect(r.x,r.y,r.w,r.h); const name=$('#roiName').value.trim()||`ROI_${state.layout.rois.length+1}`; const type=$('#roiType').value||'text'; const pattern=$('#roiPattern').value.trim()||null; state.layout.rois.push({name,type,pattern,...roi}); state.selected=state.layout.rois.length-1; draw(); renderRoiList(); toast('ROI ajouté');} act=null; handle=null; temp=null;});
+function renderRoiList(){const wrap=$('#roiList'); wrap.innerHTML=''; (state.layout.rois||[]).forEach((r,i)=>{const pill=document.createElement('div'); pill.className='roi-pill '+(i===state.selected?'active':''); pill.textContent=`${r.name} [${r.type}]${r.pattern?' · /'+r.pattern+'/':''}`; pill.onclick=()=>{state.selected=i; $('#roiName').value=r.name; $('#roiType').value=r.type||'text'; $('#roiPattern').value=r.pattern||''; renderRoiList(); draw();}; wrap.appendChild(pill);}); $('#btnDeleteRoi').disabled=state.selected<0; $('#btnRenameRoi').disabled=state.selected<0; $('#btnClearWs').disabled=!state.layout.workspace;}
+$('#btnDeleteRoi').onclick=()=>{if(state.selected<0) return; state.layout.rois.splice(state.selected,1); state.selected=-1; renderRoiList(); draw(); toast('ROI supprimé');};
+$('#btnRenameRoi').onclick=()=>{if(state.selected<0) return; const r=state.layout.rois[state.selected]; r.name=$('#roiName').value.trim()||r.name; r.type=$('#roiType').value||'text'; r.pattern=$('#roiPattern').value.trim()||null; renderRoiList(); draw(); toast('ROI mis à jour');};
+$('#btnClearWs').onclick=()=>{state.layout.workspace=null; state.layout.rois=[]; state.selected=-1; renderRoiList(); draw(); toast('Zone réinitialisée');};
+$('#btnSaveLayout').onclick=async()=>{if(!state.pid||!state.layout.workspace) return toast('Définissez la zone de travail'); const r=await jfetch(`/api/projects/${state.pid}/layout?page=${state.page}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.layout)}); toast(r.ok?'Page enregistrée':(r.data.error||'Échec enregistrement'));};
+function setLoading(on){const el=document.getElementById('loader'); if(!el) return; if(on){el.classList.remove('hidden');} else {el.classList.add('hidden');}}
+$('#btnProcess').onclick=async()=>{const list=document.getElementById('batchFiles').files; if(!list.length) return toast('Sélectionnez des fichiers'); setLoading(true); $('#btnProcess').disabled=true; try{const fd=new FormData(); [...list].forEach(f=>fd.append('files',f)); const r=await jfetch(`/api/projects/${state.pid}/process`,{method:'POST', body:fd}); if(!r.ok){toast(r.data.error||'Échec OCR'); return;} $('#processInfo').textContent=`CSV: ${r.data.csv}`; renderTable(r.data.rows, r.data.csv_url); renderOutputs(); toast('OCR terminé');} finally {setLoading(false); $('#btnProcess').disabled=false;}};
+function renderTable(rows,url){const div=$('#results'); div.innerHTML=''; if(!rows||!rows.length){div.textContent='Aucun résultat'; return;} const table=document.createElement('table'); const thead=document.createElement('thead'); const trh=document.createElement('tr'); Object.keys(rows[0]).forEach(k=>{const th=document.createElement('th'); th.textContent=k; trh.appendChild(th);}); thead.appendChild(trh); table.appendChild(thead); const tbody=document.createElement('tbody'); rows.forEach(r=>{const tr=document.createElement('tr'); Object.keys(rows[0]).forEach(k=>{const td=document.createElement('td'); td.textContent=r[k]??''; tr.appendChild(td);}); tbody.appendChild(tr);}); table.appendChild(tbody); div.appendChild(table); if(url){const a=document.createElement('a'); a.href=url; a.textContent='⬇ Télécharger le CSV'; a.className='btn btn-primary'; a.style.display='inline-block'; a.style.marginTop='10px'; a.download=''; div.appendChild(a);}}
+async function renderOutputs(){if(!state.pid) return; const r=await jfetch(`/api/projects/${state.pid}/outputs`); const div=$('#outputsHist'); div.innerHTML='<h4 style="margin:10px">Historique des exports</h4>'; if(!r.ok){div.append(' (erreur)'); return;} if(!r.data.files||!r.data.files.length){ div.append(' — aucun'); return;} const ul=document.createElement('ul'); ul.style.listStyle='none'; ul.style.padding='10px'; r.data.files.forEach(f=>{const li=document.createElement('li'); li.style.margin='6px 0'; const a=document.createElement('a'); a.href=`/api/projects/${state.pid}/download/${f}`; a.textContent=f; a.className='btn'; a.download=''; li.appendChild(a); ul.appendChild(li);}); div.appendChild(ul);}
+(async function init(){const tok=localStorage.getItem('token'); if(tok){state.token=tok; await afterLogin();}})();
