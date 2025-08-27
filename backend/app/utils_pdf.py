@@ -14,3 +14,8 @@ def render_pdf_to_image_arrays(path: str, scale: float = 2.0):
         page=pdf.get_page(i); bitmap=page.render(scale=scale).to_numpy(); page.close()
         bgr = bitmap[..., :3][:, :, ::-1]; out.append(bgr)
     pdf.close(); return out
+
+
+# Alias: keep backward-compat with main.py imports
+def render_pdf_to_image_bytes(path: str, page_index: int, scale: float = 2.0) -> bytes:
+    return render_pdf_page_to_image_bytes(path, page_index, scale=scale)
