@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FormsOCR Studio — SaaS</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar card glass">
+    <h2 class="title">Connexion</h2>
+    <div class="proj-actions">
+      <input id="email" placeholder="Email" class="input" />
+      <input id="password" placeholder="Mot de passe" type="password" class="input" />
+    </div>
+    <div class="proj-footer">
+      <button id="btnLogin" class="btn btn-primary">Se connecter</button>
+      <button id="btnRegister" class="btn">Créer un compte</button>
+    </div>
+    <hr style="border-color:var(--border);opacity:.4;width:100%">
+    <h2 class="title">Projets</h2>
+    <div class="proj-actions">
+      <input id="newProjName" placeholder="Nom du projet" class="input" />
+      <button id="btnCreate" class="btn btn-primary" disabled>Créer</button>
+    </div>
+    <div class="proj-list"><ul id="projList"></ul></div>
+    <div class="proj-footer">
+      <button id="btnRefresh" class="btn" disabled>Rafraîchir</button>
+      <button id="btnDelete" class="btn btn-danger" disabled>Supprimer</button>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar glass">
+      <div id="crumbs" class="crumbs">—</div>
+      <div class="spacer"></div>
+      <div id="meInfo" class="eng-badge tip" title=""><span class="dot"></span><span>—</span></div>
+      <div id="engBadge" class="eng-badge tip" title=""><span class="dot"></span><span>Engines…</span></div>
+    </header>
+    <section class="pane card glass">
+      <div class="pane-head">
+        <h3>Template & ROIs (multi-page PDF pris en charge)</h3>
+        <div class="pane-tools">
+          <label class="file">
+            <input type="file" id="tmplFile" accept="image/png, image/jpeg, application/pdf"/>
+            <span>Choisir template (PNG/JPG/PDF)</span>
+          </label>
+          <button id="btnUpload" class="btn btn-primary" disabled>Uploader</button>
+          <button id="btnClearWs" class="btn btn-ghost" disabled>Réinitialiser workspace</button>
+          <div class="page-nav">
+            <button id="btnPrevPg" class="btn" disabled>◀</button>
+            <span id="pageLbl">p.1</span>
+            <button id="btnNextPg" class="btn" disabled>▶</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;">
+            Zoom <input id="zoomRange" type="range" min="50" max="200" value="100"/>
+          </label>
+        </div>
+      </div>
+      <div class="editor">
+        <div class="toolbar">
+          <button id="btnWorkspace" class="btn" disabled>Zone de travail</button>
+          <button id="btnAddRoi" class="btn" disabled>Ajouter ROI</button>
+          <input id="roiName" class="input" placeholder="Nom du ROI"/>
+          <select id="roiType" class="input">
+            <option value="name">Nom</option>
+            <option value="email" selected>Email</option>
+            <option value="phone">Téléphone</option>
+            <option value="age">Âge</option>
+            <option value="digits">Chiffres</option>
+            <option value="number">Nombre</option>
+            <option value="text">Texte</option>
+          </select>
+          <input id="roiPattern" class="input" placeholder="Regex (optionnel)"/>
+          <button id="btnRenameRoi" class="btn btn-ghost" disabled>Mettre à jour</button>
+          <button id="btnDeleteRoi" class="btn btn-danger" disabled>Supprimer</button>
+          <button id="btnSaveLayout" class="btn btn-success" disabled>Enregistrer la page</button>
+        </div>
+        <div class="canvasWrap"><canvas id="canvas"></canvas></div>
+        <div id="roiList" class="roi-list"></div>
+      </div>
+      <p class="muted">Astuce : connectez-vous → créez/ouvrez un projet → chargez un template (PNG/JPG/PDF) → choisissez la page → dessinez la zone de travail → ajoutez des ROIs → Enregistrer.</p>
+    </section>
+    <section class="pane card glass">
+      <div class="pane-head">
+        <h3>Traitement par lot (respect du plan)</h3>
+        <div class="pane-tools">
+          <label class="file">
+            <input type="file" id="batchFiles" accept="image/png, image/jpeg, application/pdf" multiple/>
+            <span>Sélectionner des fichiers…</span>
+          </label>
+          <button id="btnProcess" class="btn btn-primary" disabled>Lancer l'OCR</button>
+        </div>
+      </div>
+      <div id="processInfo" class="muted"></div>
+      <div id="results" class="card table-card"></div>
+      <div id="outputsHist" class="card glass"></div>
+    </section>
+  </main>
+</div>
+<div id="loader" class="loader hidden"><div class="spinner"></div><div class="loader-text">Traitement en cours…</div></div>
+<div id="toast" class="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>

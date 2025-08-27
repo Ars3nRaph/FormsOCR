@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+opencv-python-headless
+numpy
+pytesseract
+Pillow
+python-multipart
+pandas
+pypdfium2
+passlib[bcrypt]
+python-jose[cryptography]
+SQLAlchemy>=2.0
+rapidocr-onnxruntime
+onnxruntime
+paddleocr
