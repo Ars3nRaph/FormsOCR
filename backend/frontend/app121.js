@@ -1,5 +1,3 @@
-/* FormsOCR frontend — app.js v5.3.1 */
-
 let state = {
   token: null,
   me: null,
@@ -15,7 +13,6 @@ let state = {
 const $ = (s) => document.querySelector(s);
 const toast = (msg) => {
   const t = $("#toast");
-  if (!t) return alert(msg);
   t.textContent = msg;
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 2600);
@@ -45,7 +42,7 @@ async function jfetch(url, opts = {}) {
   return { ok, data: j, status: r.status };
 }
 
-/* ---------- Authenticated blob helpers ---------- */
+/* ---------- NEW: Authenticated blob helpers ---------- */
 function authHeaderOnly() {
   const h = {};
   if (state.token) h["Authorization"] = "Bearer " + state.token;
@@ -59,6 +56,7 @@ async function fetchBlobAuth(url) {
   });
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
+    // 401/403 show a friendlier toast later
     throw new Error(txt || `HTTP ${r.status}`);
   }
   return await r.blob();
@@ -74,7 +72,7 @@ function downloadBlob(filename, blob) {
   a.remove();
   URL.revokeObjectURL(obj);
 }
-/* ------------------------------------------------ */
+/* ---------------------------------------------------- */
 
 function enableAuthed(en) {
   [
@@ -100,28 +98,21 @@ async function refreshMe() {
   if (!ok) return;
   state.me = data;
   const badge = $("#meInfo");
-  if (badge) {
-    const spans = badge.querySelectorAll("span");
-    if (spans.length >= 2) spans[1].textContent = `${data.email} · ${data.plan} · ${data.docs_processed}/${data.limits.monthly_docs}`;
-    const dot = badge.querySelector(".dot");
-    if (dot) dot.style.background = "#22c55e";
-  }
+  badge.querySelector("span:last-child").textContent = `${data.email} · ${data.plan} · ${data.docs_processed}/${data.limits.monthly_docs}`;
+  badge.querySelector(".dot").style.background = "#22c55e";
 }
 
 async function refreshEngines() {
   const { ok, data } = await jfetch("/api/engines");
   if (!ok) return;
   const b = $("#engBadge");
-  if (b) {
-    const spans = b.querySelectorAll("span");
-    if (spans.length >= 2) spans[1].textContent = `Tess ✅ · Rapid ${data.rapid ? "✅" : "❌"} · Paddle ${data.paddle ? "✅" : "❌"}`;
-  }
+  b.querySelector("span:last-child").textContent = `Tess ✅ · Rapid ${data.rapid ? "✅" : "❌"} · Paddle ${data.paddle ? "✅" : "❌"}`;
 }
 
 /* ----- Auth ----- */
-$("#btnRegister")?.addEventListener("click", async () => {
-  const email = $("#email")?.value.trim();
-  const password = $("#password")?.value;
+$("#btnRegister").onclick = async () => {
+  const email = $("#email").value.trim(),
+    password = $("#password").value;
   if (!email || !password) return toast("Email et mot de passe requis");
   const r = await jfetch("/api/auth/register", {
     method: "POST",
@@ -132,11 +123,11 @@ $("#btnRegister")?.addEventListener("click", async () => {
   state.token = r.data.access_token;
   localStorage.setItem("token", state.token);
   await afterLogin();
-});
+};
 
-$("#btnLogin")?.addEventListener("click", async () => {
-  const email = $("#email")?.value.trim();
-  const password = $("#password")?.value;
+$("#btnLogin").onclick = async () => {
+  const email = $("#email").value.trim(),
+    password = $("#password").value;
   const r = await jfetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -146,7 +137,7 @@ $("#btnLogin")?.addEventListener("click", async () => {
   state.token = r.data.access_token;
   localStorage.setItem("token", state.token);
   await afterLogin();
-});
+};
 
 async function afterLogin() {
   enableAuthed(true);
@@ -156,9 +147,11 @@ async function afterLogin() {
 /* ----- Projects ----- */
 async function refreshProjects() {
   const r = await jfetch("/api/projects");
-  if (!r.ok) return toast(r.data.error || "Erreur de liste");
+  if (!r.ok) {
+    toast(r.data.error || "Erreur de liste");
+    return;
+  }
   const ul = $("#projList");
-  if (!ul) return;
   ul.innerHTML = "";
   (r.data.projects || []).forEach((p) => {
     const li = document.createElement("li");
@@ -170,16 +163,14 @@ async function refreshProjects() {
 }
 
 async function openProject(pid, liEl, preview) {
-  const list = $("#projList");
-  if (list) [...list.children].forEach((x) => x.classList.remove("active"));
+  [...$("#projList").children].forEach((x) => x.classList.remove("active"));
   if (liEl) liEl.classList.add("active");
 
   const { ok, data } = await jfetch(`/api/projects/${pid}`);
   if (!ok) return toast(data.error || "Ouverture impossible");
 
   state.pid = pid;
-  const crumbs = $("#crumbs");
-  if (crumbs) crumbs.textContent = `${data.project.name} (${pid})`;
+  $("#crumbs").textContent = `${data.project.name} (${pid})`;
 
   const meta = data.project;
   state.pages = meta.template_pages || 1;
@@ -201,8 +192,8 @@ async function openProject(pid, liEl, preview) {
   updatePageLabel();
 }
 
-$("#btnCreate")?.addEventListener("click", async () => {
-  const name = $("#newProjName")?.value.trim();
+$("#btnCreate").onclick = async () => {
+  const name = $("#newProjName").value.trim();
   if (!name) return toast("Nom requis");
   const r = await jfetch("/api/projects", {
     method: "POST",
@@ -212,23 +203,22 @@ $("#btnCreate")?.addEventListener("click", async () => {
   if (!r.ok) return toast(r.data.error || "Échec de création");
   await refreshProjects();
   openProject(r.data.project_id);
-});
+};
 
-$("#btnRefresh")?.addEventListener("click", () => refreshProjects());
+$("#btnRefresh").onclick = () => refreshProjects();
 
-$("#btnDelete")?.addEventListener("click", async () => {
+$("#btnDelete").onclick = async () => {
   if (!state.pid) return;
   if (!confirm("Supprimer ce projet et ses fichiers ?")) return;
   const r = await jfetch(`/api/projects/${state.pid}`, { method: "DELETE" });
   toast(r.ok ? "Supprimé" : r.data.error || "Échec suppression");
   state.pid = null;
   refreshProjects();
-});
+};
 
 /* ----- Template (auth-blobs) ----- */
 function updatePageLabel() {
-  const lbl = $("#pageLbl");
-  if (lbl) lbl.textContent = `p.${state.page}/${state.pages}`;
+  $("#pageLbl").textContent = `p.${state.page}/${state.pages}`;
 }
 
 async function loadTemplateFromServer() {
@@ -264,37 +254,43 @@ async function uploadTemplateFile(f) {
     method: "POST",
     body: fd,
   });
-  if (!r.ok) return toast(r.data.error || "Échec d’upload");
+  if (!r.ok) {
+    toast(r.data.error || "Échec d’upload");
+    return;
+  }
   state.pages = r.data.pages || 1;
   state.page = 1;
   await loadTemplateFromServer();
   toast("Template chargé");
 }
 
-$("#tmplFile")?.addEventListener("change", (e) => {
-  const f = e.target.files?.[0];
-  if (!f) return toast("Aucun fichier");
-  $("#btnUpload") && ($("#btnUpload").disabled = false);
+$("#tmplFile").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (!f) {
+    toast("Aucun fichier");
+    return;
+  }
+  $("#btnUpload").disabled = false;
   uploadTemplateFile(f);
 });
-$("#btnUpload")?.addEventListener("click", () => {
-  const f = $("#tmplFile")?.files?.[0];
-  if (f) uploadTemplateFile(f);
-});
-$("#btnPrevPg")?.addEventListener("click", async () => {
+$("#btnUpload").onclick = () => {
+  const f = $("#tmplFile").files[0];
+  uploadTemplateFile(f);
+};
+$("#btnPrevPg").onclick = async () => {
   if (state.page > 1) {
     state.page--;
     await loadTemplateFromServer();
     await loadLayoutForCurrentPage();
   }
-});
-$("#btnNextPg")?.addEventListener("click", async () => {
+};
+$("#btnNextPg").onclick = async () => {
   if (state.page < state.pages) {
     state.page++;
     await loadTemplateFromServer();
     await loadLayoutForCurrentPage();
   }
-});
+};
 
 async function loadLayoutForCurrentPage() {
   const r = await jfetch(`/api/projects/${state.pid}/layout?page=${state.page}`);
@@ -311,43 +307,63 @@ let start = null,
   act = null,
   handle = null;
 
-$("#zoomRange")?.addEventListener("input", (e) => {
-  state.scale = (+e.target.value || 100) / 100;
+$("#zoomRange").addEventListener("input", (e) => {
+  state.scale = +e.target.value / 100;
   draw();
 });
 
 function getMouse(e) {
   const r = canvas.getBoundingClientRect();
-  const x = (e.clientX - r.left) / state.scale;
-  const y = (e.clientY - r.top) / state.scale;
+  const x = (e.clientX - r.left) / state.scale,
+    y = (e.clientY - r.top) / state.scale;
   return { x: Math.round(x), y: Math.round(y) };
 }
-function px(x) { return Math.round(x); }
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function px(x) {
+  return Math.round(x);
+}
+function clamp(v, a, b) {
+  return Math.max(a, Math.min(b, v));
+}
 function roiToPx(roi) {
   const ws = state.layout.workspace;
-  return { x: px(ws.x + roi.x * ws.w), y: px(ws.y + roi.y * ws.h), w: px(roi.w * ws.w), h: px(roi.h * ws.h) };
+  return {
+    x: px(ws.x + roi.x * ws.w),
+    y: px(ws.y + roi.y * ws.h),
+    w: px(roi.w * ws.w),
+    h: px(roi.h * ws.h),
+  };
 }
 function pxToRoiRect(x, y, w, h) {
   const ws = state.layout.workspace;
   return { x: (x - ws.x) / ws.w, y: (y - ws.y) / ws.h, w: w / ws.w, h: h / ws.h };
 }
-function pointInRect(p, r) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
+function pointInRect(p, r) {
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
 function norm(r) {
-  let { x, y, w, h } = r;
-  if (w < 0) { x += w; w *= -1; }
-  if (h < 0) { y += h; h *= -1; }
+  let x = r.x,
+    y = r.y,
+    w = r.w,
+    h = r.h;
+  if (w < 0) {
+    x += w;
+    w *= -1;
+  }
+  if (h < 0) {
+    y += h;
+    h *= -1;
+  }
   return { x, y, w, h };
 }
 function hitHandle(p, r) {
   const hs = 6;
-  const corners = [
+  const c = [
     [r.x, r.y, "tl"],
     [r.x + r.w, r.y, "tr"],
     [r.x, r.y + r.h, "bl"],
     [r.x + r.w, r.y + r.h, "br"],
   ];
-  for (const [x, y, k] of corners) {
+  for (const [x, y, k] of c) {
     if (pointInRect(p, { x: x - hs, y: y - hs, w: 2 * hs, h: 2 * hs })) return k;
   }
   return null;
@@ -373,7 +389,12 @@ function draw() {
       ctx.font = "12px system-ui, -apple-system, Segoe UI";
       ctx.fillText(`${roi.name} [${roi.type}]`, r.x + 6, r.y + 16);
       const hs = 6;
-      [[r.x, r.y],[r.x + r.w, r.y],[r.x, r.y + r.h],[r.x + r.w, r.y + r.h]].forEach(([x, y]) => {
+      [
+        [r.x, r.y],
+        [r.x + r.w, r.y],
+        [r.x, r.y + r.h],
+        [r.x + r.w, r.y + r.h],
+      ].forEach(([x, y]) => {
         ctx.fillStyle = "#0ea5e9";
         ctx.fillRect(x - hs, y - hs, hs * 2, hs * 2);
       });
@@ -389,11 +410,13 @@ function draw() {
   }
 }
 
-$("#btnWorkspace")?.addEventListener("click", () => (state.mode = "workspace"));
-$("#btnAddRoi")?.addEventListener("click", () => (state.mode = "roi"));
+$("#btnWorkspace").onclick = () => (state.mode = "workspace");
+$("#btnAddRoi").onclick = () => (state.mode = "roi");
 
 canvas.addEventListener("mousedown", (e) => {
-  if (!state.layout.workspace) state.mode = "workspace";
+  if (!state.layout.workspace) {
+    state.mode = "workspace";
+  }
   const p = getMouse(e);
   const ws = state.layout.workspace;
   if (state.mode === "workspace") {
@@ -403,18 +426,29 @@ canvas.addEventListener("mousedown", (e) => {
     return;
   }
   if (state.mode === "roi" && ws) {
-    let hit = -1, rpx = null;
+    let hit = -1,
+      rpx = null;
     state.layout.rois.forEach((roi, i) => {
       const r = roiToPx(roi);
-      if (pointInRect(p, r)) { hit = i; rpx = r; }
+      if (pointInRect(p, r)) {
+        hit = i;
+        rpx = r;
+      }
     });
     if (hit >= 0) {
       state.selected = hit;
       renderRoiList();
       draw();
       const h = hitHandle(p, rpx);
-      if (h) { act = "resize"; handle = h; this.start = p; this.orig = rpx; }
-      else { act = "drag"; this.offset = { dx: p.x - rpx.x, dy: p.y - rpx.y, w: rpx.w, h: rpx.h }; }
+      if (h) {
+        act = "resize";
+        handle = h;
+        this.start = p;
+        this.orig = rpx;
+      } else {
+        act = "drag";
+        this.offset = { dx: p.x - rpx.x, dy: p.y - rpx.y, w: rpx.w, h: rpx.h };
+      }
       return;
     }
     act = "draw_roi";
@@ -435,23 +469,46 @@ canvas.addEventListener("mousemove", (e) => {
   }
   if (act === "drag") {
     const ws = state.layout.workspace;
-    let x = clamp(p.x - this.offset.dx, ws.x, ws.x + ws.w - this.offset.w);
-    let y = clamp(p.y - this.offset.dy, ws.y, ws.y + ws.h - this.offset.h);
-    Object.assign(state.layout.rois[state.selected], pxToRoiRect(x, y, this.offset.w, this.offset.h));
+    let x = clamp(p.x - this.offset.dx, ws.x, ws.x + ws.w - this.offset.w),
+      y = clamp(p.y - this.offset.dy, ws.y, ws.y + ws.h - this.offset.h);
+    Object.assign(
+      state.layout.rois[state.selected],
+      pxToRoiRect(x, y, this.offset.w, this.offset.h)
+    );
     draw();
     return;
   }
   if (act === "resize") {
     const ws = state.layout.workspace;
-    let o = this.orig, x = o.x, y = o.y, w = o.w, h = o.h;
-    if (handle === "tl") { w += x - p.x; h += y - p.y; x = p.x; y = p.y; }
-    if (handle === "tr") { w = p.x - x; h += y - p.y; y = p.y; }
-    if (handle === "bl") { w += x - p.x; x = p.x; h = p.y - y; }
-    if (handle === "br") { w = p.x - x; h = p.y - y; }
+    let o = this.orig,
+      x = o.x,
+      y = o.y,
+      w = o.w,
+      h = o.h;
+    if (handle === "tl") {
+      w += x - p.x;
+      h += y - p.y;
+      x = p.x;
+      y = p.y;
+    }
+    if (handle === "tr") {
+      w = p.x - x;
+      h += y - p.y;
+      y = p.y;
+    }
+    if (handle === "bl") {
+      w += x - p.x;
+      x = p.x;
+      h = p.y - y;
+    }
+    if (handle === "br") {
+      w = p.x - x;
+      h = p.y - y;
+    }
     x = clamp(x, ws.x, ws.x + ws.w);
     y = clamp(y, ws.y, ws.y + ws.h);
     w = clamp(w, 5, ws.x + ws.w - x);
-    h = clamp(h, 5, ws.y + ws.h - y); /* FIXED: was ws.y + ws.y + ws.h - y */
+    h = clamp(h, 5, ws.y + ws.y + ws.h - y);
     Object.assign(state.layout.rois[state.selected], pxToRoiRect(x, y, w, h));
     draw();
     return;
@@ -470,75 +527,80 @@ canvas.addEventListener("mouseup", () => {
   }
   if (act === "draw_roi") {
     const r = norm(temp);
-    if (!state.layout.workspace) { act = null; return; }
+    if (!state.layout.workspace) {
+      act = null;
+      return;
+    }
     const roi = pxToRoiRect(r.x, r.y, r.w, r.h);
-    const name = $("#roiName")?.value.trim() || `ROI_${state.layout.rois.length + 1}`;
-    const type = $("#roiType")?.value || "text";
-    const pattern = $("#roiPattern")?.value.trim() || null;
+    const name =
+      $("#roiName").value.trim() || `ROI_${state.layout.rois.length + 1}`;
+    const type = $("#roiType").value || "text";
+    const pattern = $("#roiPattern").value.trim() || null;
     state.layout.rois.push({ name, type, pattern, ...roi });
     state.selected = state.layout.rois.length - 1;
     draw();
     renderRoiList();
     toast("ROI ajouté");
   }
-  act = null; handle = null; temp = null;
+  act = null;
+  handle = null;
+  temp = null;
 });
 
 function renderRoiList() {
   const wrap = $("#roiList");
-  if (!wrap) return;
   wrap.innerHTML = "";
   (state.layout.rois || []).forEach((r, i) => {
     const pill = document.createElement("div");
     pill.className = "roi-pill " + (i === state.selected ? "active" : "");
-    pill.textContent = `${r.name} [${r.type}]${r.pattern ? " · /" + r.pattern + "/" : ""}`;
+    pill.textContent = `${r.name} [${r.type}]${
+      r.pattern ? " · /" + r.pattern + "/" : ""
+    }`;
     pill.onclick = () => {
       state.selected = i;
-      const rn = $("#roiName"), rt = $("#roiType"), rp = $("#roiPattern");
-      if (rn) rn.value = r.name;
-      if (rt) rt.value = r.type || "text";
-      if (rp) rp.value = r.pattern || "";
+      $("#roiName").value = r.name;
+      $("#roiType").value = r.type || "text";
+      $("#roiPattern").value = r.pattern || "";
       renderRoiList();
       draw();
     };
     wrap.appendChild(pill);
   });
-  const del = $("#btnDeleteRoi"), ren = $("#btnRenameRoi"), clr = $("#btnClearWs");
-  if (del) del.disabled = state.selected < 0;
-  if (ren) ren.disabled = state.selected < 0;
-  if (clr) clr.disabled = !state.layout.workspace;
+  $("#btnDeleteRoi").disabled = state.selected < 0;
+  $("#btnRenameRoi").disabled = state.selected < 0;
+  $("#btnClearWs").disabled = !state.layout.workspace;
 }
 
-$("#btnDeleteRoi")?.addEventListener("click", () => {
+$("#btnDeleteRoi").onclick = () => {
   if (state.selected < 0) return;
   state.layout.rois.splice(state.selected, 1);
   state.selected = -1;
   renderRoiList();
   draw();
   toast("ROI supprimé");
-});
+};
 
-$("#btnRenameRoi")?.addEventListener("click", () => {
+$("#btnRenameRoi").onclick = () => {
   if (state.selected < 0) return;
   const r = state.layout.rois[state.selected];
-  r.name = $("#roiName")?.value.trim() || r.name;
-  r.type = $("#roiType")?.value || "text";
-  r.pattern = $("#roiPattern")?.value.trim() || null;
+  r.name = $("#roiName").value.trim() || r.name;
+  r.type = $("#roiType").value || "text";
+  r.pattern = $("#roiPattern").value.trim() || null;
   renderRoiList();
   draw();
   toast("ROI mis à jour");
-});
+};
 
-$("#btnClearWs")?.addEventListener("click", () => {
+$("#btnClearWs").onclick = () => {
   state.layout.workspace = null;
   state.layout.rois = [];
   state.selected = -1;
   renderRoiList();
   draw();
   toast("Zone réinitialisée");
-});
+};
 
-$("#btnSaveLayout")?.addEventListener("click", async () => {
+$("#btnSaveLayout").onclick = async () => {
   if (!state.pid || !state.layout.workspace) return toast("Définissez la zone de travail");
   const r = await jfetch(`/api/projects/${state.pid}/layout?page=${state.page}`, {
     method: "POST",
@@ -546,39 +608,50 @@ $("#btnSaveLayout")?.addEventListener("click", async () => {
     body: JSON.stringify(state.layout),
   });
   toast(r.ok ? "Page enregistrée" : r.data.error || "Échec enregistrement");
-});
+};
 
 /* ----- Batch process + CSV download via auth blob ----- */
 function setLoading(on) {
   const el = document.getElementById("loader");
   if (!el) return;
-  if (on) el.classList.remove("hidden");
-  else el.classList.add("hidden");
+  if (on) {
+    el.classList.remove("hidden");
+  } else {
+    el.classList.add("hidden");
+  }
 }
 
-$("#btnProcess")?.addEventListener("click", async () => {
-  const list = document.getElementById("batchFiles")?.files;
-  if (!list || !list.length) return toast("Sélectionnez des fichiers");
+$("#btnProcess").onclick = async () => {
+  const list = document.getElementById("batchFiles").files;
+  if (!list.length) {
+    toast("Sélectionnez des fichiers");
+    return;
+  }
   setLoading(true);
-  const btn = $("#btnProcess"); if (btn) btn.disabled = true;
+  $("#btnProcess").disabled = true;
   try {
     const fd = new FormData();
     [...list].forEach((f) => fd.append("files", f));
-    const r = await jfetch(`/api/projects/${state.pid}/process`, { method: "POST", body: fd });
-    if (!r.ok) return toast(r.data.error || "Échec OCR");
-    const info = $("#processInfo"); if (info) info.textContent = `CSV: ${r.data.csv}`;
+    const r = await jfetch(`/api/projects/${state.pid}/process`, {
+      method: "POST",
+      body: fd,
+    });
+    if (!r.ok) {
+      toast(r.data.error || "Échec OCR");
+      return;
+    }
+    $("#processInfo").textContent = `CSV: ${r.data.csv}`;
     renderTable(r.data.rows, r.data.csv_url);
     renderOutputs();
     toast("OCR terminé");
   } finally {
     setLoading(false);
-    const btn2 = $("#btnProcess"); if (btn2) btn2.disabled = false;
+    $("#btnProcess").disabled = false;
   }
-});
+};
 
 function renderTable(rows, url) {
   const div = $("#results");
-  if (!div) return;
   div.innerHTML = "";
   if (!rows || !rows.length) {
     div.textContent = "Aucun résultat";
@@ -630,16 +703,22 @@ async function renderOutputs() {
   if (!state.pid) return;
   const r = await jfetch(`/api/projects/${state.pid}/outputs`);
   const div = $("#outputsHist");
-  if (!div) return;
   div.innerHTML = '<h4 style="margin:10px">Historique des exports</h4>';
-  if (!r.ok) { div.append(" (erreur)"); return; }
-  if (!r.data.files || !r.data.files.length) { div.append(" — aucun"); return; }
+  if (!r.ok) {
+    div.append(" (erreur)");
+    return;
+  }
+  if (!r.data.files || !r.data.files.length) {
+    div.append(" — aucun");
+    return;
+  }
   const ul = document.createElement("ul");
   ul.style.listStyle = "none";
   ul.style.padding = "10px";
   r.data.files.forEach((f) => {
     const li = document.createElement("li");
     li.style.margin = "6px 0";
+
     const btn = document.createElement("button");
     btn.className = "btn";
     btn.textContent = "⬇ " + f;
@@ -652,6 +731,7 @@ async function renderOutputs() {
         toast("Téléchargement: " + (e.message || "401/Erreur"));
       }
     };
+
     li.appendChild(btn);
     ul.appendChild(li);
   });

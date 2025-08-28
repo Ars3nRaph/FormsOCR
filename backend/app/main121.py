@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-
 from .auth import get_db, get_current_user, hash_password, verify_password, create_access_token
 from .models import User
 from .schemas import Layout, UserCreate, TokenResponse, MeResponse
@@ -15,18 +14,12 @@ from . import storage
 from .ocr import process_batch, ENGINES_STATUS
 from .utils_pdf import render_pdf_to_image_bytes, render_pdf_to_image_arrays, pdf_page_count
 from .rate_limit import PLANS
-
-app = FastAPI(title="FormsOCR Studio — SaaS v5.3.2 (Railway-ready)")
+app = FastAPI(title="FormsOCR Studio — SaaS v5.1 (Railway-ready)")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
 @app.get("/api/health")
 def health(): return {"status":"ok"}
-
 @app.get("/api/engines")
 def engines(): return {"ok": True, **ENGINES_STATUS}
-
-# ---------- Auth ----------
-
 @app.post("/api/auth/register", response_model=TokenResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     email = user.email.strip().lower()
@@ -36,43 +29,32 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db.add(u); db.commit(); db.refresh(u)
     token = create_access_token({"sub": str(u.id)})
     return TokenResponse(access_token=token)
-
 @app.post("/api/auth/login", response_model=TokenResponse)
 def login(user: UserCreate, db: Session = Depends(get_db)):
     email = user.email.strip().lower(); u = db.query(User).filter(User.email == email).first()
     if not u or not verify_password(user.password, u.password_hash): raise HTTPException(401, "Identifiants invalides")
     token = create_access_token({"sub": str(u.id)}); return TokenResponse(access_token=token)
-
-# ---------- Me & limits ----------
-
 def _reset_month_if_needed(u: User, db: Session):
     cur = datetime.utcnow().strftime("%Y-%m")
     if u.usage_month != cur:
         u.usage_month = cur; u.docs_processed = 0; db.add(u); db.commit()
-
 @app.get("/api/me", response_model=MeResponse)
 def me(u: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _reset_month_if_needed(u, db); limits = PLANS.get(u.plan, PLANS["free"])
     return MeResponse(email=u.email, plan=u.plan, month=u.usage_month, docs_processed=u.docs_processed, limits=limits)
-
 def _ensure_under_limits_templates(db: Session, u: User):
     limits = PLANS.get(u.plan, PLANS["free"]); plist = storage.list_projects(u.id)
     with_template = sum(1 for p in plist if p.get("has_template"))
     if with_template >= limits["templates"]: raise HTTPException(402, f"Limite de templates atteinte ({limits['templates']}).")
-
-# ---------- Projects ----------
-
 @app.get("/api/projects")
 def api_list_projects(u: User = Depends(get_current_user)):
     try: return {"ok": True, "projects": storage.list_projects(u.id)}
     except Exception as e: return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
 @app.post("/api/projects")
 def api_new_project(name: str = Form(...), u: User = Depends(get_current_user)):
     pid = storage.new_project(u.id, name)
     storage.save_json(u.id, pid, 'project.json', {"name": name, "layouts": {}, "template_is_pdf": False, "template_pages": 1})
     return {"ok": True, "project_id": pid}
-
 @app.get("/api/projects/{pid}")
 def api_get_project(pid: str, u: User = Depends(get_current_user)):
     try:
@@ -82,14 +64,10 @@ def api_get_project(pid: str, u: User = Depends(get_current_user)):
         raise HTTPException(404, "Project not found")
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
 @app.delete("/api/projects/{pid}")
 def api_delete_project(pid: str, u: User = Depends(get_current_user)):
     try: storage.delete_project(u.id, pid); return {"ok": True}
     except Exception as e: return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
-# ---------- Template ----------
-
 @app.post("/api/projects/{pid}/template")
 def api_upload_template(pid: str, file: UploadFile = File(...), u: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_under_limits_templates(db, u)
@@ -102,7 +80,6 @@ def api_upload_template(pid: str, file: UploadFile = File(...), u: User = Depend
         tpath = os.path.join(pdir, f"template{ext}")
         with open(tpath, 'wb') as out:
             shutil.copyfileobj(file.file, out)
-
         meta = storage.load_json(u.id, pid, 'project.json')
         meta["template_path"] = tpath
         meta["template_is_pdf"] = ext == ".pdf"
@@ -120,7 +97,6 @@ def api_upload_template(pid: str, file: UploadFile = File(...), u: User = Depend
                 raise HTTPException(400, "Image template invalide")
             h, w = im.shape[:2]
             meta["template_pages"] = 1
-
         meta["template_width"] = w; meta["template_height"] = h
         storage.save_json(u.id, pid, 'project.json', meta)
         return {"ok": True, "template_path": tpath, "width": w, "height": h, "ext": ext, "pages": meta["template_pages"]}
@@ -128,7 +104,6 @@ def api_upload_template(pid: str, file: UploadFile = File(...), u: User = Depend
         raise
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
 @app.get("/api/projects/{pid}/template-image")
 def api_template_image(pid: str, pg: int = Query(1, ge=1), u: User = Depends(get_current_user)):
     try:
@@ -144,7 +119,6 @@ def api_template_image(pid: str, pg: int = Query(1, ge=1), u: User = Depends(get
         raise
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
 @app.post("/api/projects/{pid}/layout")
 def api_save_layout(pid: str, layout: Layout, page: int = Query(1, ge=1), u: User = Depends(get_current_user)):
     try:
@@ -160,7 +134,6 @@ def api_save_layout(pid: str, layout: Layout, page: int = Query(1, ge=1), u: Use
         raise
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
 @app.get("/api/projects/{pid}/layout")
 def api_get_layout(pid: str, page: int = Query(1, ge=1), u: User = Depends(get_current_user)):
     try:
@@ -173,38 +146,31 @@ def api_get_layout(pid: str, page: int = Query(1, ge=1), u: User = Depends(get_c
         raise
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
 @app.get("/api/projects/{pid}/outputs")
 def api_outputs(pid: str, u: User = Depends(get_current_user)):
     try: return {"ok": True, "files": storage.list_outputs(u.id, pid)}
     except Exception as e: return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
-# ---------- Process ----------
-
+@app.get("/api/projects/{pid}/download/{fname}")
+def api_download(pid: str, fname: str, u: User = Depends(get_current_user)):
+    try:
+        pdir = storage.project_dir(u.id, pid); fpath = os.path.join(pdir, "outputs", fname)
+        if not os.path.isfile(fpath): raise HTTPException(404,"File not found")
+        return FileResponse(fpath, media_type="text/csv", filename=fname)
+    except HTTPException: raise
+    except Exception as e: return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
 @app.post("/api/projects/{pid}/process")
 def api_process(pid: str, files: List[UploadFile] = File(...), u: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
-        # Ensure month reset for quota
-        _reset_month_if_needed(u, db)
-
         pdir = storage.project_dir(u.id, pid)
         if not os.path.isdir(pdir): raise HTTPException(404, "Project not found")
         meta = storage.load_json(u.id, pid, 'project.json')
         if not meta.get('template_path') or not meta.get('layouts'): raise HTTPException(400,"Template et layouts requis (au moins 1 page)")
-
-        # Effective plan for batch size check: prefer user's plan, fallback to DEFAULT_PLAN then free
-        plan_effective = u.plan or os.environ.get("DEFAULT_PLAN", "free")
-        limits_batch = PLANS.get(plan_effective, PLANS["free"])
-
+        plan = os.environ.get("DEFAULT_PLAN", u.plan); limits = PLANS.get(plan, PLANS["free"])
         files_list = list(files)
-        if len(files_list) > limits_batch["batch_size"]:
-            raise HTTPException(402, f"Votre plan autorise {limits_batch['batch_size']} documents par lot.")
-
+        if len(files_list) > limits["batch_size"]:
+            raise HTTPException(402, f"Votre plan autorise {limits['batch_size']} documents par lot.")
         import numpy as np, cv2
-
         rows_all = []
-
-        # Prepare template(s)
         if meta.get("template_is_pdf", False):
             tpages = {}
             for pidx in [int(k) for k in meta.get("layouts", {}).keys()]:
@@ -214,8 +180,6 @@ def api_process(pid: str, files: List[UploadFile] = File(...), u: User = Depends
         else:
             tim = cv2.imread(meta["template_path"], cv2.IMREAD_COLOR)
             if tim is None: raise HTTPException(400, "Template image introuvable")
-
-        # Iterate inputs
         for uf in files_list:
             ext=os.path.splitext(uf.filename)[1].lower()
             if ext not in [".png",".jpg",".jpeg",".pdf"]:
@@ -231,7 +195,6 @@ def api_process(pid: str, files: List[UploadFile] = File(...), u: User = Depends
                 data=uf.file.read()
                 im=cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
                 images_for_file.append((os.path.basename(uf.filename), im))
-
             for fname, img in images_for_file:
                 if img is None: continue
                 page_idx = 1
@@ -242,31 +205,21 @@ def api_process(pid: str, files: List[UploadFile] = File(...), u: User = Depends
                 if not layout: continue
                 timg = tpages[page_idx] if meta.get("template_is_pdf", False) else tim
                 rows = process_batch(timg, layout, [(fname, img)]); rows_all.extend(rows)
-
         if not rows_all: raise HTTPException(400, "Aucune page traitée (vérifiez les layouts/pages)")
-
-        # Save CSV
         df = pd.DataFrame(rows_all); out_dir=os.path.join(pdir,'outputs'); os.makedirs(out_dir, exist_ok=True)
         ts = datetime.now().strftime('%Y%m%d-%H%M%S'); fname=f"results-{ts}.csv"; csv_path=os.path.join(out_dir, fname)
         df.to_csv(csv_path, index=False)
-
-        # Update monthly usage
+        from .rate_limit import PLANS
         u.docs_processed += len(rows_all)
-        limits_user = PLANS.get(u.plan, PLANS["free"])
-        if u.docs_processed > limits_user["monthly_docs"]:
-            db.commit()  # persist increment so user sees they've hit the limit
-            raise HTTPException(402, f"Limite mensuelle atteinte ({limits_user['monthly_docs']} lignes/pages).")
+        limits = PLANS.get(u.plan, PLANS["free"])
+        if u.docs_processed > limits["monthly_docs"]:
+            db.commit(); raise HTTPException(402, f"Limite mensuelle atteinte ({limits['monthly_docs']} lignes/pages).")
         db.add(u); db.commit()
-
-        return {"ok": True, "rows": rows_all, "csv": csv_path.replace('\\\\','/'), "csv_url": f"/api/projects/{pid}/download/{fname}"}
+        return {"ok": True, "rows": rows_all, "csv": csv_path.replace('\\','/'), "csv_url": f"/api/projects/{pid}/download/{fname}"}
     except HTTPException: raise
     except Exception as e: return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
-
-# ---------- Static Frontend ----------
-
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
-
 @app.on_event("startup")
 def _init_db():
     from .database import Base, engine
