@@ -14,16 +14,23 @@ RUN apk add --no-cache \
     ghostscript \
     python3 \
     py3-pip \
+    py3-virtualenv \
     build-base \
     cairo-dev \
     jpeg-dev \
     pango-dev \
     giflib-dev \
     librsvg-dev \
-    pixman-dev
+    pixman-dev \
+    curl
 
-# Install Python dependencies for RapidOCR
-RUN pip3 install --no-cache-dir rapidocr-onnxruntime
+# Create and activate Python virtual environment for RapidOCR
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir rapidocr-onnxruntime
+
+# Add virtual environment to PATH
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Set working directory
 WORKDIR /app
