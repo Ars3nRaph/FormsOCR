@@ -1,9 +1,0 @@
-**/__pycache__/
-**/*.pyc
-.app.db
-app/data/*
-.venv/
-venv/
-dist/
-build/
-__pycache__/
