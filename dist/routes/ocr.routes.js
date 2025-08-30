@@ -1,0 +1,14 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const ocr_controller_1 = require("../controllers/ocr.controller");
+const upload_middleware_1 = require("../middleware/upload.middleware");
+const validation_middleware_1 = require("../middleware/validation.middleware");
+const rateLimit_middleware_1 = require("../middleware/rateLimit.middleware");
+const router = (0, express_1.Router)();
+router.post('/process', (0, rateLimit_middleware_1.rateLimitMiddleware)('ocr'), upload_middleware_1.uploadMiddleware.single('document'), validation_middleware_1.validateOCRRequest, ocr_controller_1.ocrController.processDocument);
+router.post('/extract-regions', (0, rateLimit_middleware_1.rateLimitMiddleware)('ocr'), upload_middleware_1.uploadMiddleware.single('document'), validation_middleware_1.validateOCRRequest, ocr_controller_1.ocrController.extractRegions);
+router.get('/engines', ocr_controller_1.ocrController.getEngines);
+router.get('/status', ocr_controller_1.ocrController.getStatus);
+router.post('/preview', (0, rateLimit_middleware_1.rateLimitMiddleware)('preview'), upload_middleware_1.uploadMiddleware.single('document'), ocr_controller_1.ocrController.previewDocument);
+exports.default = router;

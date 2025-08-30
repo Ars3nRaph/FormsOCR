@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const upload_controller_1 = require("../controllers/upload.controller");
+const upload_middleware_1 = require("../middleware/upload.middleware");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const rateLimit_middleware_1 = require("../middleware/rateLimit.middleware");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_1.authMiddleware);
+router.post('/document', (0, rateLimit_middleware_1.rateLimitMiddleware)('upload'), upload_middleware_1.uploadMiddleware.single('document'), upload_controller_1.uploadController.uploadDocument);
+router.post('/batch', (0, rateLimit_middleware_1.rateLimitMiddleware)('upload'), upload_middleware_1.uploadMiddleware.array('documents', 100), upload_controller_1.uploadController.uploadBatchDocuments);
+router.post('/template', (0, rateLimit_middleware_1.rateLimitMiddleware)('upload'), upload_middleware_1.uploadMiddleware.single('template'), upload_controller_1.uploadController.uploadTemplate);
+exports.default = router;

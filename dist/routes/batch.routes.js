@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const batch_controller_1 = require("../controllers/batch.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const rateLimit_middleware_1 = require("../middleware/rateLimit.middleware");
+const validation_middleware_1 = require("../middleware/validation.middleware");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_1.authMiddleware);
+router.post('/', (0, rateLimit_middleware_1.rateLimitMiddleware)('batch'), (0, auth_middleware_1.subscriptionMiddleware)(), validation_middleware_1.validateBatchJob, batch_controller_1.batchController.createBatchJob);
+router.get('/:batchId/status', batch_controller_1.batchController.getBatchStatus);
+router.get('/:batchId/results', batch_controller_1.batchController.getBatchResults);
+router.post('/:batchId/cancel', batch_controller_1.batchController.cancelBatchJob);
+router.get('/user/:userId', batch_controller_1.batchController.getUserBatchJobs);
+exports.default = router;
